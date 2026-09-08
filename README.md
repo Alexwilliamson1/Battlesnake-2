@@ -1,7 +1,7 @@
 # Battlesnake 2
  
 ## Description:
- 
+
 The program implements a Double Deep Q-Network (DDQN) reinforcement learning algorithm for training a Battlesnake agent.  The DDQN algorithm is based on the DQN algorithm, which approximates the following Bellman optimality equation for determining the optimal quality of taking an action in a given a state:  
 ![Bellman optimality equation](Images/1.jpg)
  

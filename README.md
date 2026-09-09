@@ -3,23 +3,25 @@
 ## Description:
 
 The program implements a Double Deep Q-Network (DDQN) reinforcement learning algorithm for training a Battlesnake agent.  The DDQN algorithm is based on the DQN algorithm, which approximates the following Bellman optimality equation for determining the optimal quality of taking an action in a given a state:
-<p align="left"><img src="Images/1.jpg" alt="Bellman optimality equation" width="470"></p>
+<div align="left">
+  <img src="Images/1.jpg" alt="Bellman optimality equation" width="470">
+</div>
 To approximate the Bellman optimality equation, the DQN algorithm uses a policy network to compute Q-values for each action in the action space, given a state.  This can be written as:
-<p align="left">
+<div align="left">
   <img src="Images/2.jpg" alt="Q-function using the policy network" width="210">
-</p>
+</div>
 The algorithm then chooses the action corresponding to the highest Q-value for the agent, which the environment simulates to produce the next state, s’.  To find an optimal (target) value for the highest Q-value in the current state, the policy network calculates the highest Q-value in the next state, which is added to the reward for taking the current action in the current state as follows:
-<p align="left">
+<div align="left">
   <img src="Images/3.jpg" alt="Target value calculation for DQN" width="400">
-</p>
+</div>
 The DDQN algorithm differs from the above by using a target network in addition to a policy network.  The target network is a copy of the policy network, but it is updated less frequently.  For this program, it is updated once for every thousand policy network updates.  The target network helps to produce more consistent evaluations of future actions.  In the DDQN algorithm, the policy network finds the best action a* in the next state before the optimal value calculation as follows:
-<p align="left">
+<div align="left">
   <img src="Images/4.jpg" alt="a* equation" width="230">
-</p>
+</div>
 Then the target network is used to evaluate action a* to find the optimal value of Q(s, a), represented below as y:
-<p align="left">
+<div align="left">
   <img src="Images/6.jpg" alt="Target value calculation for DDQN" width="250">
-</p>
+</div>
 The neural network uses the difference between optimal (target) values and Q-values to learn optimal actions, given any state.  
  
 The program uses several features to enhance the DDQN algorithm, including a residual network, vectorized environments, prioritized experience replay, board canonicalization, self-play, and a Monte Carlo Tree Search (MCTS).  

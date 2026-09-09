@@ -16,7 +16,7 @@ The algorithm then chooses the action corresponding to the highest Q-value for t
 </div>
 The DDQN algorithm differs from the above by using a target network in addition to a policy network.  The target network is a copy of the policy network, but it is updated less frequently.  For this program, it is updated once for every thousand policy network updates.  The target network helps to produce more consistent evaluations of future actions.  In the DDQN algorithm, the policy network finds the best action a* in the next state before the optimal value calculation as follows:
 <div align="left">
-  <img src="Images/4.jpg" alt="a* equation" width="200">
+  <img src="Images/4.jpg" alt="a* equation" width="190">
 </div>
 Then the target network is used to evaluate action a* to find the optimal value of Q(s, a), represented below as y:
 <div align="left">

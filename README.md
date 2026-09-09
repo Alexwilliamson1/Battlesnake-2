@@ -6,19 +6,22 @@ The program implements a Double Deep Q-Network (DDQN) reinforcement learning alg
 <p align="left">
   <img src="Images/1.jpg" alt="Bellman optimality equation" width="450">
 </p>
-
 To approximate the Bellman optimality equation, the DQN algorithm uses a policy network to compute Q-values for each action in the action space, given a state.  This can be written as:
-![Q-function using the policy network](Images/2.jpg)
-
+<p align="left">
+  <img src="Images/2.jpg" alt="Q-function using the policy network" width="100">
+</p>
 The algorithm then chooses the action corresponding to the highest Q-value for the agent, which the environment simulates to produce the next state, s’.  To find an optimal (target) value for the highest Q-value in the current state, the policy network calculates the highest Q-value in the next state, which is added to the reward for taking the current action in the current state as follows:
-![Target value calculation for DQN](Images/3.jpg)
-
+<p align="left">
+  <img src="Images/3.jpg" alt="Target value calculation for DQN" width="100">
+</p>
 The DDQN algorithm differs from the above by using a target network in addition to a policy network.  The target network is a copy of the policy network, but it is updated less frequently.  For this program, it is updated once for every thousand policy network updates.  The target network helps to produce more consistent evaluations of future actions.  In the DDQN algorithm, the policy network finds the best action a* in the next state before the optimal value calculation as follows:
-![a* equation](Images/4.jpg)
-
+<p align="left">
+  <img src="Images/4.jpg" alt="a* equation" width="100">
+</p>
 Then the target network is used to evaluate action a* to find the optimal value of Q(s, a), represented below as y:
-![Target value calculation for DDQN](Images/6.jpg)
-
+<p align="left">
+  <img src="Images/6.jpg" alt="Target value calculation for DDQN" width="100">
+</p>
 The neural network uses the difference between optimal (target) values and Q-values to learn optimal actions, given any state.  
  
 The program uses several features to enhance the DDQN algorithm, including a residual network, vectorized environments, prioritized experience replay, board canonicalization, self-play, and a Monte Carlo Tree Search (MCTS).  

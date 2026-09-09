@@ -4,11 +4,11 @@
 
 The program implements a Double Deep Q-Network (DDQN) reinforcement learning algorithm for training a Battlesnake agent.  The DDQN algorithm is based on the DQN algorithm, which approximates the following Bellman optimality equation for determining the optimal quality of taking an action in a given a state:  
 <p align="left">
-  <img src="Images/1.jpg" alt="Bellman optimality equation" width="460">
+  <img src="Images/1.jpg" alt="Bellman optimality equation" width="470">
 </p>
 To approximate the Bellman optimality equation, the DQN algorithm uses a policy network to compute Q-values for each action in the action space, given a state.  This can be written as:
 <p align="left">
-  <img src="Images/2.jpg" alt="Q-function using the policy network" width="400">
+  <img src="Images/2.jpg" alt="Q-function using the policy network" width="200">
 </p>
 The algorithm then chooses the action corresponding to the highest Q-value for the agent, which the environment simulates to produce the next state, s’.  To find an optimal (target) value for the highest Q-value in the current state, the policy network calculates the highest Q-value in the next state, which is added to the reward for taking the current action in the current state as follows:
 <p align="left">

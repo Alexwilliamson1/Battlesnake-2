@@ -2,7 +2,7 @@
  
 ## Description:
 
-The program implements a Double Deep Q-Network (DDQN) reinforcement learning algorithm for training a Battlesnake agent.  The DDQN algorithm is based on the DQN algorithm, which approximates the following Bellman optimality equation for determining the optimal quality of taking an action in a given a state:  
+The program implements a Double Deep Q-Network (DDQN) reinforcement learning algorithm for training a Battlesnake agent.  The DDQN algorithm is based on the DQN algorithm, which approximates the following Bellman optimality equation for determining the optimal quality of taking an action in a given a state:
 <p align="left">
   <img src="Images/1.jpg" alt="Bellman optimality equation" width="470">
 </p>
@@ -16,11 +16,11 @@ The algorithm then chooses the action corresponding to the highest Q-value for t
 </p>
 The DDQN algorithm differs from the above by using a target network in addition to a policy network.  The target network is a copy of the policy network, but it is updated less frequently.  For this program, it is updated once for every thousand policy network updates.  The target network helps to produce more consistent evaluations of future actions.  In the DDQN algorithm, the policy network finds the best action a* in the next state before the optimal value calculation as follows:
 <p align="left">
-  <img src="Images/4.jpg" alt="a* equation" width="400">
+  <img src="Images/4.jpg" alt="a* equation" width="250">
 </p>
 Then the target network is used to evaluate action a* to find the optimal value of Q(s, a), represented below as y:
 <p align="left">
-  <img src="Images/6.jpg" alt="Target value calculation for DDQN" width="400">
+  <img src="Images/6.jpg" alt="Target value calculation for DDQN" width="250">
 </p>
 The neural network uses the difference between optimal (target) values and Q-values to learn optimal actions, given any state.  
  

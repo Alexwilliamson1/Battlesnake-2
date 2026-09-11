@@ -17,8 +17,8 @@ opponent_update = 5000
 snapshot_interval = 10000
 optimizer_steps = 0
 beta = 0.4
-beta_increment = 1e-5
-tau = 0.005
+beta_start = 0.4
+beta_anneal_steps = 10_000_000
 max_opponents = 20
 
 #Use a CUDA device, if available, otherwise use the CPU:
@@ -226,7 +226,7 @@ for step in range(num_steps):
     if trained:
         #Incrementing optimizer_steps and beta for each network update:
         optimizer_steps += 1
-        beta = min(1.0, beta + beta_increment)
+        beta = min(1.0, beta_start + (1.0 - beta_start) * optimizer_steps / beta_anneal_steps)
 
         #Updating the target network every 1000 optimizer steps:
         if optimizer_steps % target_update == 0:

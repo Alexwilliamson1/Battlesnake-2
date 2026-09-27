@@ -26,6 +26,7 @@ The neural network uses the difference between optimal (target) values and Q-val
  
 The program uses several features to enhance the DDQN algorithm, including a residual network, vectorized environments, prioritized experience replay, board canonicalization, self-play, and a Monte Carlo Tree Search (MCTS).  
 
+
 The residual network consists of ten residual blocks, each of which has two convolution layers.  It takes a ten-channel state observation as input and outputs 3 Q-values and a state value.  The policy head of the network outputs 3 Q-values, since a Battlesnake can only survive by moving left, right, and forward.  The value head evaluates game states with a single value.  Together, the policy and value heads create a ‘dueling-head’ network architecture. 
  
 Vectorized environments are used to run 8 simultaneous game simulations to improve the overall efficiency of the algorithm.  Prioritized experience replay is also used to train the agent on experiences in which it performed poorly and that provide the most opportunities for learning. 

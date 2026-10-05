@@ -1,4 +1,4 @@
-from ResidualNetwork import ResBlock, ResidualNetwork
+from Network import ConvolutionalNeuralNetwork
 from ReplayBuffer import PrioritizedReplayBuffer
 from Environment import Environment, VectorizedEnv
 import random
@@ -11,14 +11,15 @@ import copy
 #Hyperparameters:
 gamma = 0.99
 batch_size = 64
-num_steps = 100000000
+num_steps = 100_000_000
 target_update = 1000
 opponent_update = 5000
-snapshot_interval = 10000
+snapshot_interval = 250_000
 optimizer_steps = 0
+training_steps = 0
 beta = 0.4
 beta_start = 0.4
-beta_anneal_steps = 10_000_000
+beta_anneal_steps = 37_500_000
 max_opponents = 20
 
 #Use a CUDA device, if available, otherwise use the CPU:
@@ -29,8 +30,8 @@ if torch.cuda.is_available():
     print("GPU:", torch.cuda.get_device_name(0))
 
 #To create the policy and target networks:
-policy_net = ResidualNetwork().to(device)
-target_net = ResidualNetwork().to(device)
+policy_net = ConvolutionalNeuralNetwork().to(device)
+target_net = ConvolutionalNeuralNetwork().to(device)
 
 #To create the optimizer and replay buffer:
 optimizer = optim.Adam(policy_net.parameters(), lr=1e-4)
@@ -61,7 +62,7 @@ def make_opponent_snapshot(network):
 
 #To return a network with the given state dictionary:
 def network_from_state_dict(state_dict):
-    network = ResidualNetwork().to(device)
+    network = ConvolutionalNeuralNetwork().to(device)
     network.load_state_dict(state_dict)
     network.eval()
 
@@ -88,6 +89,7 @@ try:
     saved_pool = checkpoint.get('opponent_pool', [])
     opponent_pool = [network_from_state_dict(state) for state in saved_pool]
     optimizer_steps = checkpoint.get('optimizer_steps', 0)
+    training_steps = checkpoint.get('training_steps', 0)
     beta = checkpoint.get('beta', 0.4)
 
     print("checkpoint.pth has succesfully loaded.")
@@ -101,6 +103,7 @@ except Exception as e:
     latest_opponent = make_opponent_snapshot(policy_net) 
     opponent_pool = []
     optimizer_steps = 0
+    training_steps = 0
     beta = 0.4
 
 #To set the policy network to training mode and the target network to evaluation mode:
@@ -207,8 +210,9 @@ for step in range(num_steps):
             'latest_opponent_state_dict': opponent_manager.latest_opponent.state_dict(),
             'opponent_pool':[network.state_dict() for network in opponent_manager.opponent_pool],
             'optimizer_steps': optimizer_steps,
+            'training_steps': training_steps,
             'beta': beta,
-        }, "checkpoint.pth")
+        }, "checkpoint.pth")    
 
     policy_net.eval()
     #Computing an action for each environment:
@@ -216,6 +220,7 @@ for step in range(num_steps):
     policy_net.train()
     #Stepping each environment by simulating the actions and returning the transition data:
     next_states, masks_next, rewards, dones, _ = env.step(actions)
+    training_steps += len(env.envs)
     for i in range(len(states)):
         #Adding new experiences to the replay buffer:
         buffer.push(states[i], actions[i], rewards[i], next_states[i], masks[i], masks_next[i], dones[i])
@@ -251,9 +256,9 @@ for step in range(num_steps):
         if optimizer_steps % 10000 == 0:
             print(f"Optimizer steps completed: {optimizer_steps}")
             print(f"Beta = {beta}")
-
-    if (step * 8) % 400 == 0:
-        print(f"Training steps completed: {step * 8}")
+ 
+    if (training_steps) % 5000 == 0:
+        print(f"Training steps completed: {training_steps}")
     
 
 

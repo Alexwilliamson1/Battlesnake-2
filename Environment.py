@@ -1,3 +1,4 @@
+import torch
 import random
 import numpy as np
 import GameSimulator
@@ -36,10 +37,12 @@ class VectorizedEnv:
                 masks[i] = new_mask
                 self.games_complete += 1
                 self.reward += rewards[i]
-                if self.games_complete % 20 == 0:
-                    print(f"{self.games_complete} games have run.")
-                    print("Average reward (20 games): ", self.reward / 20)
+                if self.games_complete % 100 == 0:
+                    print("Average reward (100 games): ", self.reward / 100)
                     self.reward = 0
+                if self.games_complete % 1000 == 0:
+                    print(f"{self.games_complete} games have run.")
+
         return (
             np.stack(obs),
             np.stack(masks),
@@ -157,7 +160,7 @@ class Environment:
         return 0.0
 
     #To perform a Monte Carlo Tree Search with the given number of simulations and return the move with most visit counts:
-    def mcts_action(self, policy_net, num_simulations=10):
+    def mcts_action(self, policy_net, num_simulations=5):
         rng = self.mcts_rng
         mask = MCTS.get_action_mask(self.state)
         

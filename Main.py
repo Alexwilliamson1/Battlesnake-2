@@ -8,7 +8,7 @@
 import random
 import typing
 import torch
-from Policy import select_action, policy_net, device
+from Policy import policy_net, get_current_direction, mcts_action_for_games
 
 #Information for creating a Battlesnake, including one's username and customizable snake features:
 def info() -> typing.Dict:
@@ -33,7 +33,23 @@ def end(game_state: typing.Dict):
 #To compute and return a move each turn:
 def move(game_state: typing.Dict) -> typing.Dict:
     with torch.inference_mode():
-        move = select_action(game_state, policy_net, device)
+        action = mcts_action_for_games(
+            game_state,
+            policy_net,
+            num_simulations=5
+        )
+
+    direction = get_current_direction(game_state)
+
+    mapping = {
+        "up":    ["left", "up", "right"],
+        "down":  ["right", "down", "left"],
+        "left":  ["down", "left", "up"],
+        "right": ["up", "right", "down"]
+    }
+
+    move = mapping[direction][action]
+
     return {"move": move}
 
 #Calling "run_server":

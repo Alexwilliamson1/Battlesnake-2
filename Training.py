@@ -114,7 +114,7 @@ target_net.eval()
 opponent_manager = OpponentManager(latest_opponent=latest_opponent, opponent_pool=opponent_pool, historical_probability=0.20)
 
 #To create a VectorizedEnvironment object, given the number of environments, an OpponentManager object, and a device:
-env = VectorizedEnv(num_envs=8, opponent_manager=opponent_manager, device=device)
+env = VectorizedEnv(num_envs=32, opponent_manager=opponent_manager, device=device)
 
 #To create tensors from the training data; calculate Q-values, target values, TD errors, loss, and priorities; and step the optimizer:
 def train_step():

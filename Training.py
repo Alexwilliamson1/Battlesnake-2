@@ -19,7 +19,7 @@ optimizer_steps = 0
 training_steps = 0
 beta = 0.4
 beta_start = 0.4
-beta_anneal_steps = 37_500_000
+beta_anneal_steps = 50_000_000
 max_opponents = 20
 
 #Use a CUDA device, if available, otherwise use the CPU:
@@ -216,7 +216,7 @@ for step in range(num_steps):
 
     policy_net.eval()
     #Computing an action for each environment:
-    actions = [environment.mcts_action(policy_net) for environment in env.envs]
+    actions = env.mcts_actions(policy_net, num_simulations=5)
     policy_net.train()
     #Stepping each environment by simulating the actions and returning the transition data:
     next_states, masks_next, rewards, dones, _ = env.step(actions)

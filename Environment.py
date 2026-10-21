@@ -51,6 +51,94 @@ class VectorizedEnv:
             infos
         )
 
+    def mcts_actions(self, policy_net, num_simulations=5):
+        roots = []
+
+        for env in self.envs:
+            mask = MCTS.get_action_mask(env.state)
+
+            root = MCTS.Node(
+                env.state,
+                mask,
+                observation=env._get_observation(),
+                rng=env.mcts_rng
+            )
+
+            roots.append(root)
+
+        policy_net.eval()
+
+        try:
+            for _ in range(num_simulations):
+                selected_nodes = []
+
+                for env, root in zip(self.envs, roots):
+                    rng = env.mcts_rng
+                    node = MCTS.select(root)
+
+                    if node.done:
+                        pass
+
+                    elif (
+                        node.visit_count == 0
+                        and node.parent is not None
+                    ):
+                        pass
+
+                    else:
+                        if len(node.children) == 0:
+                            MCTS.expand(
+                                node,
+                                env.opponent_net,
+                                env.device
+                            )
+
+                        if len(node.children) > 0:
+                            node = rng.choice(
+                                list(node.children.values())
+                            )
+
+                    selected_nodes.append(node)
+
+                values = MCTS.evaluate_batch(
+                    selected_nodes,
+                    policy_net,
+                    self.envs[0].device
+                )
+
+                for node, value in zip(selected_nodes, values):
+                    MCTS.backpropagate(node, value)
+
+        finally:
+            pass
+
+        actions = []
+
+        for env, root in zip(self.envs, roots):
+            rng = env.mcts_rng
+
+            if len(root.children) == 0:
+                valid_actions = np.flatnonzero(root.mask)
+
+                if len(valid_actions) == 0:
+                    best_action = 1
+                else:
+                    best_action = int(
+                        rng.choice(valid_actions.tolist())
+                    )
+            else:
+                best_action = int(max(
+                    root.children.items(),
+                    key=lambda pair: pair[1].visit_count
+                )[0])
+
+            if env.flip:
+                best_action = int(FLIP[best_action])
+
+            actions.append(best_action)
+
+        return actions
+
     #To compute the action mask for each environment:
     def get_masks(self):
         masks = [env.get_action_mask() for env in self.envs]

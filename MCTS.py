@@ -126,36 +126,69 @@ def expand(node, opponent_net, device):
                 done = done
         )
 
-#To evaluate a node by returning either the highest Q-value for the agent, 1 if the agent is the last surviving snake, or -1 if the agent's health is zero or will be zero after the next turn:
+#To evaluate nodes by returning either the highest Q-value for the agent, 1 if the agent is the last surviving snake, or -1 if the agent's health is zero or will be zero after the next turn:
+def evaluate_batch(nodes, policy_net, device):
+    values = [None] * len(nodes)
+    pending_indices = []
+
+    for i, node in enumerate(nodes):
+        if agent_is_dead(node.state):
+            values[i] = -1.0
+
+        elif agent_has_won(node.state):
+            values[i] = 1.0
+
+        elif not np.any(node.mask):
+            values[i] = -1.0
+
+        else:
+            pending_indices.append(i)
+
+    if pending_indices:
+        observations = np.stack([
+            nodes[i].observation
+            for i in pending_indices
+        ])
+
+        states_tensor = torch.as_tensor(
+            observations,
+            dtype=torch.float32,
+            device=device
+        )
+
+        masks_tensor = torch.as_tensor(
+            np.stack([
+                nodes[i].mask
+                for i in pending_indices
+            ]),
+            dtype=torch.bool,
+            device=device
+        )
+
+        with torch.inference_mode():
+            q_values, _ = policy_net(states_tensor)
+
+            q_values = q_values.masked_fill(
+                ~masks_tensor,
+                -torch.inf
+            )
+
+            batch_values = q_values.max(dim=1).values
+
+        for index, value in zip(
+            pending_indices,
+            batch_values.tolist()
+        ):
+            values[index] = float(value)
+
+    return values
+
 def evaluate(node, policy_net, device):
-    if agent_is_dead(node.state):
-        return -1.0
-
-    if agent_has_won(node.state):
-        return 1.0
-
-    if not np.any(node.mask):
-        return -1.0
-
-    state_tensor = (
-        torch.from_numpy(node.observation)
-        .float()
-        .unsqueeze(0)
-        .to(device)
-    )
-
-    with torch.inference_mode():
-        #Using the policy network to calculate Q-values:
-        q_values, _ = policy_net(state_tensor)
-
-    q_values = q_values.squeeze(0)
-
-    mask = torch.as_tensor(node.mask, dtype=torch.bool, device=device)
-
-    q_values = q_values.masked_fill(~mask, -torch.inf)
-    
-    #Returning the highest Q-value:
-    return float(q_values.max().item())
+    return evaluate_batch(
+        [node],
+        policy_net,
+        device
+    )[0]
 
 #To traverse up the tree from the given node, incrementing each node's visit count and adding the given value to each node's total value:
 def backpropagate(node, value):

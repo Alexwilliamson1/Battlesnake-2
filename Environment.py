@@ -24,22 +24,86 @@ class VectorizedEnv:
 
     #To simulate turns, initialize new games, and return the observation, action mask, reward, and done indicator for the transition in each environment:
     def step(self, actions):
-        results = [env.step(a) for env, a in zip(self.envs, actions)]
+        if len(actions) != self.num_envs:
+            raise ValueError(
+                f"Expected {self.num_envs} actions, got {len(actions)}"
+            )
+
+        # Phase 1: Prepare each environment's controlled-snake move.
+        all_moves = []
+        states_by_network = {}
+
+        for env_index, (env, action) in enumerate(
+            zip(self.envs, actions)
+        ):
+            moves, opponent_states = env.prepare_step(action)
+            all_moves.append(moves)
+
+            for snake_index, move_state in opponent_states:
+                network = env.opponent_net
+                device = env.device
+
+                if network is None:
+                    raise ValueError(
+                        f"Environment {env_index} has no opponent network."
+                    )
+
+                key = (network, device)
+
+                if key not in states_by_network:
+                    states_by_network[key] = []
+
+                states_by_network[key].append(
+                    (move_state, env_index, snake_index)
+                )
+
+        # Phase 2: Batch opponent-network evaluations.
+        for (network, device), entries in states_by_network.items():
+            game_states = [
+                entry[0] for entry in entries
+            ]
+
+            network.eval()
+
+            opponent_actions = Policy.select_actions_batch(
+                game_states,
+                network,
+                device
+            )
+
+            # Put each predicted move into its corresponding environment.
+            for entry, move in zip(entries, opponent_actions):
+                _, env_index, snake_index = entry
+                all_moves[env_index][snake_index] = move
+
+        # Phase 3: Resolve all turns.
+        results = [
+            env.finish_step(moves)
+            for env, moves in zip(self.envs, all_moves)
+        ]
 
         obs, masks, rewards, dones, infos = zip(*results)
-        
+
         obs = list(obs)
         masks = list(masks)
+
+        # Preserve your original completed-game tracking and reset logic.
         for i, done in enumerate(dones):
             if done:
                 new_obs, new_mask = self.envs[i].reset()
                 obs[i] = new_obs
                 masks[i] = new_mask
+
                 self.games_complete += 1
                 self.reward += rewards[i]
+
                 if self.games_complete % 100 == 0:
-                    print("Average reward (100 games): ", self.reward / 100)
+                    print(
+                        "Average reward (100 games): ",
+                        self.reward / 100
+                    )
                     self.reward = 0
+
                 if self.games_complete % 1000 == 0:
                     print(f"{self.games_complete} games have run.")
 
@@ -180,61 +244,86 @@ class Environment:
         
         return obs, mask
 
-    #To simulate a game turn, given the agent's move, and return the observation, mask, and reward for the resulting state:
-    def step(self, action_index):
-        action_index  = int(action_index) 
-        current_flip = self.flip
+    def prepare_step(self, action_index):
+        """Prepare the agent move and collect opponent states."""
 
-        if current_flip:
-            action_index = int(FLIP[action_index])
+        action_index = int(action_index)
 
         if action_index not in (0, 1, 2):
-            raise ValueError(f"The action index must be 0, 1, or 2, but it is {action_index}")
+            raise ValueError(
+                f"Invalid action index: {action_index}"
+            )
+
+        if self.flip:
+            action_index = int(FLIP[action_index])
 
         current_dir = self.get_current_direction()
+
         mapping = {
             "up": ["left", "up", "right"],
-            "down": ["right", "down", "left"], 
+            "down": ["right", "down", "left"],
             "left": ["down", "left", "up"],
             "right": ["up", "right", "down"]
         }
 
-        moves = {self.agent_index: mapping[current_dir][action_index]}
+        moves = {
+            self.agent_index: mapping[current_dir][action_index]
+        }
+
+        opponent_states = []
 
         for i, snake in enumerate(self.state["board"]["snakes"]):
-            if i == self.agent_index:
-                continue
-            if snake["health"] <= 0:
+            if i == self.agent_index or snake["health"] <= 0:
                 continue
 
-            move_state = GameSimulator.make_move_state(self.state, i)
-            
-            move = Policy.select_action(game_state=move_state, network=self.opponent_net, device=self.device) 
+            move_state = GameSimulator.make_move_state(
+                self.state, i
+            )
 
-            if move is None:
-                snake["health"] = 0
-                continue
+            opponent_states.append((i, move_state))
 
-            moves[i] = move
-            
+        return moves, opponent_states
+
+    def finish_step(self, moves):
+        """Resolve a prepared turn and return its transition."""
+
         GameSimulator.resolve_turn(self.state, moves, self.rng)
-        self.state["you"] = (self.state["board"]["snakes"][self.agent_index])
+
+        self.state["you"] = self.state["board"]["snakes"][self.agent_index]
         self.state["turn"] += 1
 
         game_done = GameSimulator.game_over(self.state)
-
-        agent_dead = (self.state["board"]["snakes"][self.agent_index]["health"] <= 0)
+        agent_dead = (
+            self.state["board"]["snakes"][self.agent_index]["health"] <= 0
+        )
 
         done = agent_dead or game_done
         reward = self._compute_reward(game_done)
 
         self.flip = self.rng.random() < 0.5
         obs = self._apply_flip(self._get_observation())
-
         mask = self.get_action_mask()
 
         return obs, mask, reward, done, {}
-   
+    
+    #To simulate a game turn, given the agent's move, and return the observation, mask, and reward for the resulting state:
+    def step(self, action_index):
+        moves, opponent_states = self.prepare_step(action_index)
+
+        for snake_index, move_state in opponent_states:
+            move = Policy.select_action(
+                game_state=move_state,
+                network=self.opponent_net,
+                device=self.device
+            )
+
+            if move is None:
+                self.state["board"]["snakes"][snake_index]["health"] = 0
+            else:
+                moves[snake_index] = move
+
+        return self.finish_step(moves) 
+    
     #The following function returns a reward of 1 if the agent is the last surviving snake at the end of a game, -1 if the agent's health is 0, and 0 otherwise. 
     def _compute_reward(self, done):
         agent = self.state["board"]["snakes"][self.agent_index]

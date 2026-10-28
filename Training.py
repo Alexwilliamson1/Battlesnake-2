@@ -13,7 +13,7 @@ gamma = 0.99
 batch_size = 64
 num_steps = 100_000_000
 target_update = 1000
-opponent_update = 5_000
+opponent_update = 5000
 snapshot_interval = 250_000
 optimizer_steps = 0
 training_steps = 0
@@ -114,7 +114,7 @@ target_net.eval()
 opponent_manager = OpponentManager(latest_opponent=latest_opponent, opponent_pool=opponent_pool, historical_probability=0.20)
 
 #To create a VectorizedEnvironment object, given the number of environments, an OpponentManager object, and a device:
-env = VectorizedEnv(num_envs=64, opponent_manager=opponent_manager, device=device)
+env = VectorizedEnv(num_envs=32, opponent_manager=opponent_manager, device=device)
 
 #To create tensors from the training data; calculate Q-values, target values, TD errors, loss, and priorities; and step the optimizer:
 def train_step():
@@ -201,7 +201,7 @@ states, masks = env.reset()
 
 #The training loop:
 for step in range(num_steps):
-    if step % 500 == 0:
+    if step % 10_000 == 0:
         #Regularly saving training data in checkpoint.pth:
         torch.save({
             'policy_state_dict': policy_net.state_dict(),
@@ -233,19 +233,19 @@ for step in range(num_steps):
         optimizer_steps += 1
         beta = min(1.0, beta_start + (1.0 - beta_start) * optimizer_steps / beta_anneal_steps)
 
-        #Updating the target network every 125 optimizer steps:
-        if (optimizer_steps * 8) % target_update == 0:
+        #Updating the target network every 1000 optimizer steps:
+        if (optimizer_steps * 4) % target_update == 0:
             target_net.load_state_dict(policy_net.state_dict())
             target_net.eval()
 
-        #Updating the opponent network every 625 otimizer steps:
-        if (optimizer_steps * 8) % opponent_update == 0:
+        #Updating the opponent network every 5000 otimizer steps:
+        if (optimizer_steps * 4) % opponent_update == 0:
             previous_latest = opponent_manager.latest_opponent
 
             opponent_manager.latest_opponent = (make_opponent_snapshot(policy_net))
 
-            #Adding the previous opponent network to the opponent pool every 1250 optimizer steps:
-            if (optimizer_steps * 8) % snapshot_interval == 0:
+            #Adding the previous opponent network to the opponent pool every 10000 optimizer steps:
+            if (optimizer_steps * 4) % snapshot_interval == 0:
                 opponent_manager.opponent_pool.append(previous_latest)
 
                 #Removing the oldest opponent network from the pool when the pool size exceeds 20:

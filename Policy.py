@@ -127,16 +127,16 @@ def select_action(game_state, network, device):
 def select_actions_batch(game_states, network, device):
     """Select one move for each game state using a batched network pass."""
 
-    if not game_states:
+    if len(game_states) == 0:
         return []
 
-    # Prepare observations and current-direction mappings.
     observations = np.stack([
         _get_observation(state)
         for state in game_states
     ])
 
     candidate_moves = []
+
     for state in game_states:
         current_dir = get_current_direction(state)
 
@@ -149,15 +149,17 @@ def select_actions_batch(game_states, network, device):
 
         candidate_moves.append(mapping[current_dir])
 
-    # One network evaluation for the entire batch.
-    states_t = torch.from_numpy(observations).to(device)
+    states_t = torch.from_numpy(observations).float().to(device)
+
+    network.eval()
 
     with torch.inference_mode():
         q_values, _ = network(states_t)
 
-    # Preserve the same safe-move selection used by select_action().
     actions = []
+
     for i, game_state in enumerate(game_states):
+
         action_order = torch.argsort(
             q_values[i], descending=True
         ).tolist()
@@ -171,7 +173,6 @@ def select_actions_batch(game_states, network, device):
                 move = candidate
                 break
 
-        # If every move is unsafe, preserve the original fallback.
         if move is None:
             move = candidate_moves[i][action_order[0]]
 
@@ -180,7 +181,7 @@ def select_actions_batch(game_states, network, device):
     return actions
 
 #To perform a Monte Carlo Tree Search with the given number of simulations and return the move with most visit counts:
-def mcts_action_for_games(state, policy_net, num_simulations=1):
+def mcts_action_for_games(state, policy_net, num_simulations=5):
     rng = random.Random()
     mask = MCTS.get_action_mask(state)
     

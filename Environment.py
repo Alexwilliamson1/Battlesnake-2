@@ -116,9 +116,11 @@ class VectorizedEnv:
         )
 
     def mcts_actions(self, policy_net, num_simulations=5):
+
         roots = []
 
         for env in self.envs:
+
             mask = MCTS.get_action_mask(env.state)
 
             root = MCTS.Node(
@@ -133,10 +135,15 @@ class VectorizedEnv:
         policy_net.eval()
 
         try:
-            for _ in range(num_simulations):
-                selected_nodes = []
 
+            for _ in range(num_simulations):
+
+                selected_nodes = []
+                expansion_records = []
+
+                # 1. Select nodes and prepare expansions.
                 for env, root in zip(self.envs, roots):
+
                     rng = env.mcts_rng
                     node = MCTS.select(root)
 
@@ -149,39 +156,107 @@ class VectorizedEnv:
                     ):
                         pass
 
-                    else:
-                        if len(node.children) == 0:
-                            MCTS.expand(
-                                node,
-                                env.opponent_net,
-                                env.device
-                            )
+                    elif len(node.children) == 0:
 
-                        if len(node.children) > 0:
-                            node = rng.choice(
-                                list(node.children.values())
-                            )
+                        records = MCTS.prepare_expansion(node)
+
+                        for record in records:
+                            record["opponent_net"] = env.opponent_net
+                            record["device"] = env.device
+
+                        expansion_records.extend(records)
 
                     selected_nodes.append(node)
 
+                # 2. Collect all opponent observations.
+                opponent_requests = []
+
+                for record in expansion_records:
+
+                    for snake_index, move_state in record["opponent_states"]:
+
+                        opponent_requests.append(
+                            (record, snake_index, move_state)
+                        )
+
+                # 3. Group requests by opponent network and device.
+                opponent_groups = {}
+
+                for record, snake_index, move_state in opponent_requests:
+
+                    key = (
+                        id(record["opponent_net"]),
+                        str(record["device"])
+                    )
+
+                    if key not in opponent_groups:
+                        opponent_groups[key] = {
+                            "network": record["opponent_net"],
+                            "device": record["device"],
+                            "requests": []
+                        }
+
+                    opponent_groups[key]["requests"].append(
+                        (record, snake_index, move_state)
+                    )
+
+                # 4. Evaluate each opponent group in batches.
+                for group in opponent_groups.values():
+
+                    requests = group["requests"]
+
+                    game_states = [
+                        request[2] for request in requests
+                    ]
+
+                    moves = Policy.select_actions_batch(
+                        game_states,
+                        group["network"],
+                        group["device"]
+                    )
+
+                    # Distribute predicted moves to their corresponding states.
+                    for (record, snake_index, _), move in zip(
+                        requests, moves
+                    ):
+                        record["moves"][snake_index] = move
+
+                # 5. Finish all prepared expansions.
+                for record in expansion_records:
+                    MCTS.finish_expansion(record)
+
+                # 6. Select a child from each expanded node.
+                for i, node in enumerate(selected_nodes):
+
+                    if not node.done and len(node.children) > 0:
+
+                        selected_nodes[i] = self.envs[i].mcts_rng.choice(
+                            list(node.children.values())
+                        )
+
+                # 7. Batch-evaluate the selected nodes with the main policy.
                 values = MCTS.evaluate_batch(
                     selected_nodes,
                     policy_net,
                     self.envs[0].device
                 )
 
+                # 8. Backpropagate.
                 for node, value in zip(selected_nodes, values):
                     MCTS.backpropagate(node, value)
 
         finally:
             pass
 
+        # Select the final action from each root.
         actions = []
 
         for env, root in zip(self.envs, roots):
+
             rng = env.mcts_rng
 
             if len(root.children) == 0:
+
                 valid_actions = np.flatnonzero(root.mask)
 
                 if len(valid_actions) == 0:
@@ -190,7 +265,9 @@ class VectorizedEnv:
                     best_action = int(
                         rng.choice(valid_actions.tolist())
                     )
+
             else:
+
                 best_action = int(max(
                     root.children.items(),
                     key=lambda pair: pair[1].visit_count

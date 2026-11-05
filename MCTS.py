@@ -1,4 +1,3 @@
-import torch
 import numpy as np
 import random
 import GameSimulator
@@ -7,7 +6,7 @@ from copy import deepcopy
 
 #A class for saving the data related to each node in the tree:
 class Node:
-    def __init__(self, state, mask, observation, parent=None, action=None, rng=None, done=False):
+    def __init__(self, state, mask, observation, parent=None, action=None, rng=None, done=False, flip=False):
         self.state = deepcopy(state)
         self.observation = observation
         self.mask = mask
@@ -21,6 +20,7 @@ class Node:
         self.total_value = 0.0
         self.rng = rng
         self.done = done
+        self.flip = flip
 
     @property
     #To calculate the value of a node:
@@ -71,7 +71,8 @@ def prepare_expansion(node):
 
     for action in valid_actions:
 
-        action = int(action)
+        if node.flip:
+            action = int(np.array([2, 1, 0])[action])
         next_state = deepcopy(node.state)
         moves = {}
         opponent_states = []
@@ -142,11 +143,11 @@ def finish_expansion(record):
 
     next_state["you"] = controlled_snake
 
+    next_state["turn"] += 1
+
     agent_dead = controlled_snake["health"] <= 0
     game_done = GameSimulator.game_over(next_state)
     done = agent_dead or game_done
-
-    next_state["turn"] += 1
 
     next_obs = Policy._get_observation(next_state)
 
@@ -155,6 +156,10 @@ def finish_expansion(record):
     else:
         next_mask = get_action_mask(next_state)
 
+    if node.flip:
+        next_obs = np.flip(next_obs, axis=2).copy()
+        next_mask = next_mask[np.array([2, 1, 0])]
+
     node.children[action] = Node(
         state=next_state,
         mask=next_mask,
@@ -162,85 +167,68 @@ def finish_expansion(record):
         parent=node,
         action=action,
         rng=node.rng,
-        done=done
+        done=done,
+        flip=node.flip
     )
 
 #To simulate each of the agent's valid actions in the given node's state and create child nodes from the resulting data:
-def expand(node, opponent_net, device):
-    valid_actions = np.where(node.mask == 1)[0]
+def expand(node, opponent_id, inference_client):
 
-    controlled_id = node.state["you"]["id"]
+    expansions = prepare_expansion(node)
 
-    #To loop through all safe moves in the given node's state:
-    for action in valid_actions:
-        action = int(action)
-        next_state = deepcopy(node.state)
-        moves = {}
-        for i, snake in enumerate(next_state["board"]["snakes"]):
-            if snake["health"] <= 0:
-                continue
-            if snake["id"] == controlled_id:
-                current_dir = get_current_direction(next_state)
+    all_opponent_states = []
 
-                mapping = {
-                    "up": ["left", "up", "right"],
-                    "down": ["right", "down", "left"],
-                    "left": ["down", "left", "up"],
-                    "right": ["up", "right", "down"]
-                }
+    for record in expansions:
+        for snake_index, move_state in record["opponent_states"]:
+            all_opponent_states.append(
+                (record, snake_index, move_state)
+            )
 
-                moves[i] = mapping[current_dir][action]
+    if all_opponent_states:
 
-            else:
-                #To create the game state for the player at index i:
-                move_state = GameSimulator.make_move_state(next_state, i)
-                #To use the given opponent network to choose a move:
-                move = Policy.select_action(move_state, opponent_net, device)
+        game_states = [
+            item[2] for item in all_opponent_states
+        ]
 
-                if move is None:
-                    snake["health"] = 0
-                    continue
-
-                moves[i] = move
-
-        #To compute the next state, given each player's move:
-        GameSimulator.resolve_turn(next_state, moves, node.rng)
-        controlled_snake = next((snake for snake in next_state["board"]["snakes"] if snake["id"] == controlled_id), None)
-        if controlled_snake is None:
-            raise RuntimeError(f"There is no snake with id {controlled_id!r} in the simulated state.")
-        next_state["you"] = controlled_snake
-        agent_dead = controlled_snake["health"] <= 0
-        game_done = GameSimulator.game_over(next_state)
-        done = agent_dead or game_done
-        next_state["turn"] += 1
-        #To create the observation and action mask for the new state:
-        next_obs = Policy._get_observation(next_state)
-        if done:
-            next_mask = np.zeros(3, dtype=np.float32)
-        else:
-            next_mask = get_action_mask(next_state)
-        #To create a child node from the new game state:
-        node.children[action] = Node(
-                state = next_state,
-                mask = next_mask,
-                observation = next_obs,
-                parent = node,
-                action = action,
-                rng = node.rng,
-                done = done
+        opponent_moves = inference_client.select_actions(
+            opponent_id,
+            game_states
         )
 
+        if len(opponent_moves) != len(all_opponent_states):
+            raise RuntimeError(
+                "The inference process returned an incorrect "
+                "number of opponent actions."
+            )
+
+        for (record, snake_index, _), move in zip(
+            all_opponent_states,
+            opponent_moves
+        ):
+
+            if move is None:
+                record["next_state"]["board"]["snakes"][snake_index]["health"] = 0
+            else:
+                record["moves"][snake_index] = move
+
+    for record in expansions:
+        finish_expansion(record)
+
 #To evaluate nodes by returning either the highest Q-value for the agent, 1 if the agent is the last surviving snake, or -1 if the agent's health is zero or will be zero after the next turn:
-def evaluate_batch(nodes, policy_net, device):
+def evaluate_batch(nodes, inference_client):
+
     values = [None] * len(nodes)
     pending_indices = []
 
     for i, node in enumerate(nodes):
-        if agent_is_dead(node.state):
-            values[i] = -1.0
 
-        elif agent_has_won(node.state):
-            values[i] = 1.0
+        if node.done:
+            if agent_is_dead(node.state):
+                values[i] = -1.0
+            elif agent_has_won(node.state):
+                values[i] = 1.0
+            else:
+                values[i] = -1.0
 
         elif not np.any(node.mask):
             values[i] = -1.0
@@ -248,50 +236,42 @@ def evaluate_batch(nodes, policy_net, device):
         else:
             pending_indices.append(i)
 
+    # Only send non-terminal nodes to the central inference process.
     if pending_indices:
-        observations = np.stack([
+
+        observations = [
             nodes[i].observation
             for i in pending_indices
-        ])
+        ]
 
-        states_tensor = torch.as_tensor(
+        masks = [
+            nodes[i].mask
+            for i in pending_indices
+        ]
+
+        batch_values = inference_client.evaluate_values(
             observations,
-            dtype=torch.float32,
-            device=device
+            masks
         )
 
-        masks_tensor = torch.as_tensor(
-            np.stack([
-                nodes[i].mask
-                for i in pending_indices
-            ]),
-            dtype=torch.bool,
-            device=device
-        )
-
-        with torch.inference_mode():
-            q_values, _ = policy_net(states_tensor)
-
-            q_values = q_values.masked_fill(
-                ~masks_tensor,
-                -torch.inf
+        if len(batch_values) != len(pending_indices):
+            raise RuntimeError(
+                "The inference process returned an incorrect "
+                "number of node values."
             )
 
-            batch_values = q_values.max(dim=1).values
-
-        for index, value in zip(
-            pending_indices,
-            batch_values.tolist()
-        ):
+        for index, value in zip(pending_indices, batch_values):
             values[index] = float(value)
 
     return values
 
-def evaluate(node, policy_net, device):
+
+# To evaluate a single node:
+def evaluate(node, inference_client):
+
     return evaluate_batch(
         [node],
-        policy_net,
-        device
+        inference_client
     )[0]
 
 #To traverse up the tree from the given node, incrementing each node's visit count and adding the given value to each node's total value:

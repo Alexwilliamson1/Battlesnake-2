@@ -10,9 +10,25 @@ FLIP = np.array([2, 1, 0])
 
 #The following is a class for creating and calling functions on a vector of environment objects.  A VectorizedEnv object is initialized with a number of environments, an OpponentManager object, and a device, such as "cpu."
 class VectorizedEnv:
-    def __init__(self, num_envs, opponent_manager, device):
-        self.envs = [Environment(opponent_manager=opponent_manager, device=device) for _ in range(num_envs)]
+    def __init__(
+        self,
+        num_envs,
+        opponent_manager,
+        inference_client,
+        worker_id
+    ):
+        self.envs = [
+            Environment(
+                opponent_manager=opponent_manager,
+                device=torch.device("cpu")
+            )
+            for _ in range(num_envs)
+        ]
+
         self.num_envs = num_envs
+        self.inference_client = inference_client
+        self.worker_id = worker_id
+
         self.games_complete = 0
         self.reward = 0
 
@@ -31,50 +47,41 @@ class VectorizedEnv:
 
         # Phase 1: Prepare each environment's controlled-snake move.
         all_moves = []
-        states_by_network = {}
+        # Group opponent requests by opponent ID.
+        states_by_opponent = {}
 
-        for env_index, (env, action) in enumerate(
-            zip(self.envs, actions)
-        ):
+        for env_index, (env, action) in enumerate(zip(self.envs, actions)):
             moves, opponent_states = env.prepare_step(action)
             all_moves.append(moves)
 
             for snake_index, move_state in opponent_states:
-                network = env.opponent_net
-                device = env.device
 
-                if network is None:
-                    raise ValueError(
-                        f"Environment {env_index} has no opponent network."
-                    )
+                opponent_id = env.opponent_id
 
-                key = (network, device)
+                if opponent_id not in states_by_opponent:
+                    states_by_opponent[opponent_id] = []
 
-                if key not in states_by_network:
-                    states_by_network[key] = []
-
-                states_by_network[key].append(
+                states_by_opponent[opponent_id].append(
                     (move_state, env_index, snake_index)
                 )
 
-        # Phase 2: Batch opponent-network evaluations.
-        for (network, device), entries in states_by_network.items():
-            game_states = [
-                entry[0] for entry in entries
-            ]
+        # Request opponent actions from the main process.
+        for opponent_id, entries in states_by_opponent.items():
 
-            network.eval()
+            game_states = [entry[0] for entry in entries]
 
-            opponent_actions = Policy.select_actions_batch(
-                game_states,
-                network,
-                device
+            opponent_actions = self.inference_client.select_actions(
+                opponent_id,
+                game_states
             )
 
-            # Put each predicted move into its corresponding environment.
             for entry, move in zip(entries, opponent_actions):
                 _, env_index, snake_index = entry
-                all_moves[env_index][snake_index] = move
+
+                if move is None:
+                    self.envs[env_index].state["board"]["snakes"][snake_index]["health"] = 0
+                else:
+                    all_moves[env_index][snake_index] = move
 
         # Phase 3: Resolve all turns.
         results = [
@@ -115,24 +122,28 @@ class VectorizedEnv:
             infos
         )
 
-    def mcts_actions(self, policy_net, num_simulations=5):
+    def mcts_actions(self, num_simulations=5):
 
         roots = []
 
         for env in self.envs:
 
+            observation = env._apply_flip(env._get_observation())
+
             mask = MCTS.get_action_mask(env.state)
+
+            if env.flip:
+                mask = mask[FLIP]
 
             root = MCTS.Node(
                 env.state,
                 mask,
-                observation=env._get_observation(),
-                rng=env.mcts_rng
+                observation=observation,
+                rng=env.mcts_rng,
+                flip=env.flip
             )
 
             roots.append(root)
-
-        policy_net.eval()
 
         try:
 
@@ -161,8 +172,7 @@ class VectorizedEnv:
                         records = MCTS.prepare_expansion(node)
 
                         for record in records:
-                            record["opponent_net"] = env.opponent_net
-                            record["device"] = env.device
+                            record["opponent_id"] = env.opponent_id
 
                         expansion_records.extend(records)
 
@@ -179,47 +189,37 @@ class VectorizedEnv:
                             (record, snake_index, move_state)
                         )
 
-                # 3. Group requests by opponent network and device.
+                # 3. Group requests by opponent ID.
                 opponent_groups = {}
 
                 for record, snake_index, move_state in opponent_requests:
 
-                    key = (
-                        id(record["opponent_net"]),
-                        str(record["device"])
-                    )
+                    opponent_id = record["opponent_id"]
 
-                    if key not in opponent_groups:
-                        opponent_groups[key] = {
-                            "network": record["opponent_net"],
-                            "device": record["device"],
-                            "requests": []
-                        }
+                    if opponent_id not in opponent_groups:
+                        opponent_groups[opponent_id] = []
 
-                    opponent_groups[key]["requests"].append(
+                    opponent_groups[opponent_id].append(
                         (record, snake_index, move_state)
                     )
 
-                # 4. Evaluate each opponent group in batches.
-                for group in opponent_groups.values():
-
-                    requests = group["requests"]
+                # 4. Request opponent actions from the main process.
+                for opponent_id, requests in opponent_groups.items():
 
                     game_states = [
                         request[2] for request in requests
                     ]
 
-                    moves = Policy.select_actions_batch(
-                        game_states,
-                        group["network"],
-                        group["device"]
+                    moves = self.inference_client.select_actions(
+                        opponent_id,
+                        game_states
                     )
 
-                    # Distribute predicted moves to their corresponding states.
-                    for (record, snake_index, _), move in zip(
-                        requests, moves
-                    ):
-                        record["moves"][snake_index] = move
+                    for (record, snake_index, _), move in zip(requests, moves):
+                        if move is None:
+                            record["state"]["board"]["snakes"][snake_index]["health"] = 0
+                        else:
+                            record["moves"][snake_index] = move
 
                 # 5. Finish all prepared expansions.
                 for record in expansion_records:
@@ -234,11 +234,9 @@ class VectorizedEnv:
                             list(node.children.values())
                         )
 
-                # 7. Batch-evaluate the selected nodes with the main policy.
                 values = MCTS.evaluate_batch(
                     selected_nodes,
-                    policy_net,
-                    self.envs[0].device
+                    self.inference_client
                 )
 
                 # 8. Backpropagate.
@@ -293,8 +291,8 @@ class Environment:
         self.num_opponents = num_opponents
 
         self.opponent_manager = opponent_manager
-        self.opponent_net = None
-        self.device = device
+        self.opponent_id = None
+        self.device = torch.device("cpu")
         self.rng = random.Random(seed)
         self.mcts_rng = random.Random(None if seed is None else seed + 1)
 
@@ -304,8 +302,9 @@ class Environment:
 
     #To reset the environment by initializing a new game, choosing an opponent policy for the game, and returning the observation and action mask for the first game state:
     def reset(self):
-        self.opponent_net = (self.opponent_manager.choose_opponent(self.rng))
-
+        self.opponent_id = (
+            self.opponent_manager.choose_opponent_id(self.rng)
+        )
         self.state = GameSimulator.init_game(self.num_opponents + 1, 
                                               width=self.width,
                                               height=self.height, 
@@ -412,52 +411,6 @@ class Environment:
             return +1.0
 
         return 0.0
-
-    #To perform a Monte Carlo Tree Search with the given number of simulations and return the move with most visit counts:
-    def mcts_action(self, policy_net, num_simulations=5):
-        rng = self.mcts_rng
-        mask = MCTS.get_action_mask(self.state)
-        
-        root = MCTS.Node(self.state, mask, observation=self._get_observation(), rng=rng)
-
-        for _ in range(num_simulations):
-            node = MCTS.select(root)
-            
-            if node.done:
-                value = MCTS.evaluate(node, policy_net, self.device)
-
-            elif node.visit_count == 0 and node.parent is not None:
-                value = MCTS.evaluate(node, policy_net, self.device)
-
-            else:
-                if len(node.children) == 0:
-                    MCTS.expand(node, self.opponent_net, self.device)
-
-                if len(node.children) > 0:
-                    node = rng.choice(
-                        list(node.children.values())
-                    )
-            
-                value = MCTS.evaluate(node, policy_net, self.device)
-            
-            MCTS.backpropagate(node, value)
-        
-        if len(root.children) == 0:
-            valid_actions = np.flatnonzero(mask)
-            if len(valid_actions) == 0:
-                best_action = 1
-            else:    
-                best_action = int(rng.choice(valid_actions.tolist()))
-        else:
-            best_action = int(max(
-                root.children.items(),
-                key = lambda pair: pair[1].visit_count
-            )[0])
-        
-        if self.flip:
-            best_action = int(FLIP[best_action])
-
-        return best_action
     
     #To create the obervation using a function from Policy.py:
     def _get_observation(self):

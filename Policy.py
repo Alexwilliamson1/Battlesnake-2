@@ -23,6 +23,7 @@ try:
 except (FileNotFoundError, KeyError, RuntimeError) as error:
     print("The live policy network failed to load.")
     print(error)
+    raise SystemExit(1)
 
 policy_net.eval()
 
@@ -151,10 +152,14 @@ def select_actions_batch(game_states, network, device):
 
     states_t = torch.from_numpy(observations).float().to(device)
 
+    was_training = network.training
     network.eval()
 
-    with torch.inference_mode():
-        q_values, _ = network(states_t)
+    try:
+        with torch.inference_mode():
+            q_values, _ = network(states_t)
+    finally:
+        network.train(was_training)
 
     actions = []
 
@@ -179,49 +184,6 @@ def select_actions_batch(game_states, network, device):
         actions.append(move)
 
     return actions
-
-#To perform a Monte Carlo Tree Search with the given number of simulations and return the move with most visit counts:
-def mcts_action_for_games(state, policy_net, num_simulations=5):
-    rng = random.Random()
-    mask = MCTS.get_action_mask(state)
-    
-    root = MCTS.Node(state, mask, observation=_get_observation(state), rng=rng)
-
-    for _ in range(num_simulations):
-        node = MCTS.select(root)
-        
-        if node.done:
-            value = MCTS.evaluate(node, policy_net, device)
-
-        elif node.visit_count == 0 and node.parent is not None:
-            value = MCTS.evaluate(node, policy_net, device)
-
-        else:
-            if len(node.children) == 0:
-                MCTS.expand(node, policy_net, device)
-
-            if len(node.children) > 0:
-                node = rng.choice(
-                    list(node.children.values())
-                )
-        
-            value = MCTS.evaluate(node, policy_net, device)
-        
-        MCTS.backpropagate(node, value)
-    
-    if len(root.children) == 0:
-        valid_actions = np.flatnonzero(mask)
-        if len(valid_actions) == 0:
-            best_action = 1
-        else:    
-            best_action = int(rng.choice(valid_actions.tolist()))
-    else:
-        best_action = int(max(
-            root.children.items(),
-            key = lambda pair: pair[1].visit_count
-        )[0])
-
-    return best_action
 
 #To return the direction of the agent, given the game state:
 def get_current_direction(state):

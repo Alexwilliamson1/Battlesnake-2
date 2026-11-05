@@ -118,13 +118,13 @@ def main():
     transition_queue = mp.Queue()
 
     response_queues = [
-        mp.Queue() for _ in range(4)
+        mp.Queue() for _ in range(2)
     ]
 
     # Start four worker processes.
     workers = []
 
-    for worker_id in range(4):
+    for worker_id in range(2):
 
         process = mp.Process(
             target=worker_process,

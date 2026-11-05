@@ -15,7 +15,7 @@ import copy
 #Hyperparameters:
 gamma = 0.99
 batch_size = 64
-num_steps = 100_000_000
+num_steps = 500_000_000
 target_update = 1000
 opponent_update = 5000
 snapshot_interval = 250_000

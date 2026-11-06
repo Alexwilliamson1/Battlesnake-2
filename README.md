@@ -44,7 +44,7 @@ To use the agent for playing games, one requires: Python 3 or higher; Flask; an 
  
 To run the DDQN program, open a command-line interface, navigate to the directory containing the program files, and run the command `python3 Training.py`.  To run the program when your computer may change its mode to sleep, run `caffeinate -i python3 Training.py`.  If running the program on a GPU, one can use a version of the program with more multiprocessing by running `python3 TrainingGPU.py`.
 
-To use the agent in live games, first create a Battlesnake on play.battlesnake.com, then run the command `python3 Main.py` from the directory containing the program’s files.  Please see the Notes section of the Battlesnake 1 repository for instructions on how to obtain a server URL to create a Battlesnake.  
+To use the agent in live games, first create a Battlesnake on play.battlesnake.com, then add your checkpoint.pth file to the `For games` directory and run the command `python3 Main.py` from that directory.  Please see the Notes section of the Battlesnake 1 repository for instructions on how to obtain a server URL to create a Battlesnake.  
  
 ## Notes:
 

@@ -1,11 +1,4 @@
-from Network import ConvolutionalNeuralNetwork
-from ReplayBuffer import PrioritizedReplayBuffer
 from Environment import VectorizedEnv
-import Policy
-import torch
-import torch.nn.functional as F
-import torch.optim as optim
-import numpy as np
 import multiprocessing as mp
 import queue
 import time
@@ -18,19 +11,33 @@ batch_size = 64
 num_steps = 500_000_000
 target_update = 1000
 opponent_update = 5000
-snapshot_interval = 250_000
+snapshot_interval = 750_000
 beta_start = 0.4
 beta_anneal_steps = 50_000_000
-max_opponents = 20
+max_opponents = 10
 
-#Use a CUDA device, if available, otherwise use the CPU:
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using device: {device}")
-
-if torch.cuda.is_available():
-    print("GPU:", torch.cuda.get_device_name(0))
+device = "cpu"
 
 def main():
+
+    global device
+
+    from Network import ConvolutionalNeuralNetwork
+    from ReplayBuffer import PrioritizedReplayBuffer
+    import torch
+    import torch.nn.functional as F
+    import torch.optim as optim
+    import numpy as np
+
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu"
+    )
+
+    print(f"Using device: {device}")
+
+    if torch.cuda.is_available():
+        print("GPU:", torch.cuda.get_device_name(0))
+
     optimizer_steps = 0
     training_steps = 0
     beta = 0.4
@@ -59,9 +66,16 @@ def main():
             latest_opponent = make_opponent_snapshot(policy_net)
         saved_pool = checkpoint.get('opponent_pool', [])
         opponent_pool = [network_from_state_dict(state) for state in saved_pool]
+        
         optimizer_steps = checkpoint.get('optimizer_steps', 0)
         training_steps = checkpoint.get('training_steps', 0)
         beta = checkpoint.get('beta', 0.4)
+
+        del checkpoint
+        del saved_pool
+
+        import gc
+        gc.collect()
 
         print("checkpoint.pth has succesfully loaded.")
 
@@ -115,7 +129,7 @@ def main():
 
     # Create the communication queues.
     request_queue = mp.Queue()
-    transition_queue = mp.Queue()
+    transition_queue = mp.Queue(maxsize=20)
 
     response_queues = [
         mp.Queue() for _ in range(10)
@@ -256,10 +270,10 @@ def main():
                 pass
 
             # Train once for approximately every 32 new transitions.
-            if pending_transitions >= 32:
+            if pending_transitions >= 64:
 
                 trained = train_step()
-                pending_transitions -= 32
+                pending_transitions -= 64
 
                 if trained:
 
@@ -273,7 +287,7 @@ def main():
                     )
 
                     # Update target network.
-                    if (optimizer_steps * 4) % target_update == 0:
+                    if (optimizer_steps * 8) % target_update == 0:
 
                         target_net.load_state_dict(
                             policy_net.state_dict()
@@ -287,7 +301,7 @@ def main():
                     )
 
                     # Update latest opponent.
-                    if (optimizer_steps * 4) % opponent_update == 0:
+                    if (optimizer_steps * 8) % opponent_update == 0:
                         opponent_counter += 1
                         new_opponent_id = f"opponent_{opponent_counter}"
 
@@ -300,7 +314,7 @@ def main():
                         )
 
                     # Add the previous latest opponent to the historical pool.
-                    if (optimizer_steps * 4) % snapshot_interval == 0:
+                    if (optimizer_steps * 8) % snapshot_interval == 0:
                         pool_ids = list(
                             opponent_catalogue["opponent_pool_ids"]
                         )
@@ -344,7 +358,7 @@ def main():
 
                 next_checkpoint_step += 10_000
 
-            if training_steps and training_steps % 10_000 == 0:
+            if training_steps and training_steps % 50_000 == 0:
                 print(f"Training steps completed: {training_steps}")
 
     finally:
@@ -453,6 +467,8 @@ def make_opponent_snapshot(network):
 #To return a network with the given state dictionary:
 def network_from_state_dict(state_dict):
 
+    from Network import ConvolutionalNeuralNetwork
+
     network = ConvolutionalNeuralNetwork().to(device)
 
     network.load_state_dict(state_dict)
@@ -471,8 +487,6 @@ def worker_process(
     opponent_info
 ):
 
-    torch.set_num_threads(1)
-
     inference_client = InferenceClient(
         worker_id,
         request_queue,
@@ -482,7 +496,7 @@ def worker_process(
     opponent_manager = OpponentManager(opponent_info)
 
     env = VectorizedEnv(
-        num_envs=8,
+        num_envs=12,
         opponent_manager=opponent_manager,
         inference_client=inference_client,
         worker_id=worker_id
@@ -525,6 +539,10 @@ def process_inference_requests(
     policy_net,
     device
 ):
+
+    import torch
+    import numpy as np
+    from Policy import select_actions_batch
 
     requests = []
 
@@ -571,17 +589,20 @@ def process_inference_requests(
             for request in group:
                 game_states.extend(request["game_states"])
 
-            moves = Policy.select_actions_batch(
+            moves = select_actions_batch(
                 game_states,
                 network,
                 device
             )
+
         except Exception as e:
             for request in group:
                 response_queues[request["worker_id"]].put({
                     "request_id": request["request_id"],
                     "error": str(e)
                 })
+
+            continue
 
         offset = 0
 

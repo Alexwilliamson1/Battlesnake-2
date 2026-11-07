@@ -104,10 +104,10 @@ class VectorizedEnv:
                 self.games_complete += 1
                 self.reward += rewards[i]
 
-                if self.games_complete % 100 == 0:
+                if self.games_complete % 1000 == 0:
                     print(
-                        "Average reward (100 games): ",
-                        self.reward / 100
+                        "Average reward (1000 games): ",
+                        self.reward / 1000
                     )
                     self.reward = 0
 

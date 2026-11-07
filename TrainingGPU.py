@@ -7,13 +7,13 @@ import copy
 
 #Hyperparameters:
 gamma = 0.99
-batch_size = 128
+batch_size = 256
 num_steps = 500_000_000
 target_update = 1000
 opponent_update = 5000
 snapshot_interval = 750_000
 beta_start = 0.4
-beta_anneal_steps = 40_000_000
+beta_anneal_steps = 37_500_000
 max_opponents = 10
 
 device = "cpu"
@@ -96,8 +96,8 @@ def main():
     ) * 10_000
 
     next_print_step = (
-        (training_steps // 50_000) + 1
-    ) * 50_000
+        (training_steps // 100_000) + 1
+    ) * 100_000
 
     #To set the policy network to training mode and the target network to evaluation mode:
     policy_net.train()
@@ -274,10 +274,10 @@ def main():
                 pass
 
             # Train once for approximately every 32 new transitions.
-            while pending_transitions >= 128:
+            while pending_transitions >= 256:
 
                 trained = train_step()
-                pending_transitions -= 128
+                pending_transitions -= 256
 
                 if not trained:
                     break
@@ -292,7 +292,7 @@ def main():
                 )
 
                 # Update target network.
-                if (optimizer_steps * 16) % target_update == 0:
+                if (optimizer_steps * 32) % target_update == 0:
 
                     target_net.load_state_dict(
                         policy_net.state_dict()
@@ -306,7 +306,7 @@ def main():
                 )
 
                 # Update latest opponent.
-                if (optimizer_steps * 16) % opponent_update == 0:
+                if (optimizer_steps * 32) % opponent_update == 0:
                     opponent_counter += 1
                     new_opponent_id = f"opponent_{opponent_counter}"
 
@@ -319,7 +319,7 @@ def main():
                     )
 
                 # Add the previous latest opponent to the historical pool.
-                if (optimizer_steps * 16) % snapshot_interval == 0:
+                if (optimizer_steps * 32) % snapshot_interval == 0:
                     pool_ids = list(
                         opponent_catalogue["opponent_pool_ids"]
                     )
@@ -367,7 +367,7 @@ def main():
 
                 print(f"Training steps completed: {training_steps}")
 
-                next_print_step += 50_000
+                next_print_step += 100_000
 
     finally:
 
@@ -504,7 +504,7 @@ def worker_process(
     opponent_manager = OpponentManager(opponent_info)
 
     env = VectorizedEnv(
-        num_envs=32,
+        num_envs=64,
         opponent_manager=opponent_manager,
         inference_client=inference_client,
         worker_id=worker_id

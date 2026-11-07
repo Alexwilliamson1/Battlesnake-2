@@ -95,6 +95,10 @@ def main():
         (training_steps // 10_000) + 1
     ) * 10_000
 
+    next_print_step = (
+        (training_steps // 50_000) + 1
+    ) * 50_000
+
     #To set the policy network to training mode and the target network to evaluation mode:
     policy_net.train()
     target_net.eval()
@@ -132,13 +136,13 @@ def main():
     transition_queue = mp.Queue(maxsize=20)
 
     response_queues = [
-        mp.Queue() for _ in range(17)
+        mp.Queue() for _ in range(16)
     ]
 
     # Start four worker processes.
     workers = []
 
-    for worker_id in range(17):
+    for worker_id in range(16):
 
         process = mp.Process(
             target=worker_process,
@@ -359,8 +363,11 @@ def main():
 
                 next_checkpoint_step += 10_000
 
-            if training_steps and training_steps % 50_000 == 0:
+            if training_steps >= next_print_step:
+
                 print(f"Training steps completed: {training_steps}")
+
+                next_print_step += 50_000
 
     finally:
 
@@ -497,7 +504,7 @@ def worker_process(
     opponent_manager = OpponentManager(opponent_info)
 
     env = VectorizedEnv(
-        num_envs=25,
+        num_envs=32,
         opponent_manager=opponent_manager,
         inference_client=inference_client,
         worker_id=worker_id

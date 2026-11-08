@@ -13,7 +13,7 @@ target_update = 1000
 opponent_update = 5000
 snapshot_interval = 750_000
 beta_start = 0.4
-beta_anneal_steps = 37_500_000
+beta_anneal_steps = 42_000_000
 max_opponents = 10
 
 device = "cpu"

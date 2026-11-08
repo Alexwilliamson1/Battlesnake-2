@@ -111,9 +111,6 @@ class VectorizedEnv:
                     )
                     self.reward = 0
 
-                if self.games_complete % 1000 == 0:
-                    print(f"{self.games_complete} games have run.")
-
         return (
             np.stack(obs),
             np.stack(masks),

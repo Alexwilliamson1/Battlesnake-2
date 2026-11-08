@@ -92,8 +92,8 @@ def main():
         beta = 0.4
 
     next_checkpoint_step = (
-        (training_steps // 10_000) + 1
-    ) * 10_000
+        (training_steps // 250_000) + 1
+    ) * 250_000
 
     next_print_step = (
         (training_steps // 100_000) + 1
@@ -361,7 +361,7 @@ def main():
 
                 }, "checkpoint.pth")
 
-                next_checkpoint_step += 10_000
+                next_checkpoint_step += 250_000
 
             if training_steps >= next_print_step:
 

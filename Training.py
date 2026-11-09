@@ -77,7 +77,14 @@ def main():
         training_steps = 0
         beta = 0.4
 
+    last_hour_time = time.monotonic()
+    last_hour_steps = training_steps
+
     next_checkpoint_step = (
+        (training_steps // 50_000) + 1
+    ) * 50_000
+
+    next_print_step = (
         (training_steps // 50_000) + 1
     ) * 50_000
 
@@ -344,8 +351,30 @@ def main():
 
                 next_checkpoint_step += 50_000
 
-            if training_steps and training_steps % 10_000 == 0:
+            if training_steps >= next_print_step:
+
                 print(f"Training steps completed: {training_steps}")
+
+                next_print_step += 50_000
+
+            current_time = time.monotonic()
+
+            if current_time - last_hour_time >= 3600:
+
+                steps_this_hour = training_steps - last_hour_steps
+
+                print(
+                    f"Training steps completed in the last hour: "
+                    f"{steps_this_hour:,}"
+                )
+
+                print(
+                    f"Average training steps per second: "
+                    f"{steps_this_hour / (current_time - last_hour_time):,.2f}"
+                )
+
+                last_hour_steps = training_steps
+                last_hour_time = current_time
 
     finally:
 

@@ -14,7 +14,7 @@ import copy
 
 #Hyperparameters:
 gamma = 0.99
-batch_size = 64
+batch_size = 512
 num_steps = 500_000_000
 target_update = 1000
 opponent_update = 5000
@@ -78,8 +78,8 @@ def main():
         beta = 0.4
 
     next_checkpoint_step = (
-        (training_steps // 10_000) + 1
-    ) * 10_000
+        (training_steps // 50_000) + 1
+    ) * 50_000
 
     #To set the policy network to training mode and the target network to evaluation mode:
     policy_net.train()
@@ -118,13 +118,13 @@ def main():
     transition_queue = mp.Queue()
 
     response_queues = [
-        mp.Queue() for _ in range(2)
+        mp.Queue() for _ in range(3)
     ]
 
     # Start four worker processes.
     workers = []
 
-    for worker_id in range(2):
+    for worker_id in range(3):
 
         process = mp.Process(
             target=worker_process,
@@ -227,7 +227,6 @@ def main():
 
         while training_steps < num_steps:
 
-
             policy_net.eval()
 
             # Service neural-network inference requests from workers.
@@ -256,69 +255,70 @@ def main():
                 pass
 
             # Train once for approximately every 32 new transitions.
-            if pending_transitions >= 32:
+            while pending_transitions >= batch_size:
 
                 trained = train_step()
-                pending_transitions -= 32
+                pending_transitions -= batch_size
 
-                if trained:
+                if not trained:
+                    break
 
-                    optimizer_steps += 1
+                optimizer_steps += 1
 
-                    beta = min(
-                        1.0,
-                        beta_start
-                        + (1.0 - beta_start)
-                        * optimizer_steps / beta_anneal_steps
+                beta = min(
+                    1.0,
+                    beta_start
+                    + (1.0 - beta_start)
+                    * optimizer_steps / beta_anneal_steps
+                )
+
+                # Update target network.
+                if (optimizer_steps * 64) % target_update == 0:
+
+                    target_net.load_state_dict(
+                        policy_net.state_dict()
                     )
 
-                    # Update target network.
-                    if (optimizer_steps * 4) % target_update == 0:
+                    target_net.eval()
 
-                        target_net.load_state_dict(
-                            policy_net.state_dict()
-                        )
+                # Capture the previous latest opponent before replacing it.
+                previous_latest_id = (
+                    opponent_catalogue["latest_opponent_id"]
+                )
 
-                        target_net.eval()
+                # Update latest opponent.
+                if (optimizer_steps * 64) % opponent_update == 0:
+                    opponent_counter += 1
+                    new_opponent_id = f"opponent_{opponent_counter}"
 
-                    # Capture the previous latest opponent before replacing it.
-                    previous_latest_id = (
-                        opponent_catalogue["latest_opponent_id"]
+                    opponent_networks[new_opponent_id] = (
+                        make_opponent_snapshot(policy_net)
                     )
 
-                    # Update latest opponent.
-                    if (optimizer_steps * 4) % opponent_update == 0:
-                        opponent_counter += 1
-                        new_opponent_id = f"opponent_{opponent_counter}"
+                    opponent_catalogue["latest_opponent_id"] = (
+                        new_opponent_id
+                    )
 
-                        opponent_networks[new_opponent_id] = (
-                            make_opponent_snapshot(policy_net)
-                        )
+                # Add the previous latest opponent to the historical pool.
+                if (optimizer_steps * 64) % snapshot_interval == 0:
+                    pool_ids = list(
+                        opponent_catalogue["opponent_pool_ids"]
+                    )
 
-                        opponent_catalogue["latest_opponent_id"] = (
-                            new_opponent_id
-                        )
+                    if previous_latest_id not in pool_ids:
+                        pool_ids.append(previous_latest_id)
 
-                    # Add the previous latest opponent to the historical pool.
-                    if (optimizer_steps * 4) % snapshot_interval == 0:
-                        pool_ids = list(
-                            opponent_catalogue["opponent_pool_ids"]
-                        )
+                    # Keep only the most recent max_opponents snapshots.
+                    pool_ids = pool_ids[-max_opponents:]
 
-                        if previous_latest_id not in pool_ids:
-                            pool_ids.append(previous_latest_id)
+                    opponent_catalogue["opponent_pool_ids"] = pool_ids
+                if optimizer_steps % 10_000 == 0:
 
-                        # Keep only the most recent max_opponents snapshots.
-                        pool_ids = pool_ids[-max_opponents:]
+                    print(
+                        f"Optimizer steps completed: {optimizer_steps}"
+                    )
 
-                        opponent_catalogue["opponent_pool_ids"] = pool_ids
-                    if optimizer_steps % 10_000 == 0:
-
-                        print(
-                            f"Optimizer steps completed: {optimizer_steps}"
-                        )
-
-                        print(f"Beta = {beta}")
+                    print(f"Beta = {beta}")
 
             if training_steps >= next_checkpoint_step:
                 torch.save({
@@ -342,7 +342,7 @@ def main():
 
                 }, "checkpoint.pth")
 
-                next_checkpoint_step += 10_000
+                next_checkpoint_step += 50_000
 
             if training_steps and training_steps % 10_000 == 0:
                 print(f"Training steps completed: {training_steps}")

@@ -5,7 +5,7 @@ import time
 import random
 import copy
 
-#The following was tested on a NVIDIA A40 GPU with 46.57 GB of system memory:
+#The following was tested on a NVIDIA RTX A5000 GPU:
 
 #Hyperparameters:
 gamma = 0.99
@@ -31,21 +31,9 @@ def main():
     import torch.optim as optim
     import numpy as np
 
-    torch.set_num_threads(2)
-    torch.set_num_interop_threads(1)
-
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "cpu"
     )
-
-    if device.type == "cuda":
-
-        torch.backends.cudnn.benchmark = True
-
-        torch.backends.cudnn.allow_tf32 = True
-        torch.backends.cuda.matmul.allow_tf32 = True
-
-        torch.set_float32_matmul_precision("high")
 
     print(f"Using device: {device}")
 
@@ -229,52 +217,31 @@ def main():
         )
 
         #Calculating Q-values for each state
-        with torch.autocast(
-            device_type="cuda",
-            dtype=torch.bfloat16,
-            enabled=(device.type == "cuda")
-        ):
-            q_values_all, _ = policy_net(states_tensor)
+        q_values_all, _ = policy_net(states_tensor)
+        q_values = q_values_all.gather(1, actions_tensor.unsqueeze(1)).squeeze(1)
 
-            q_values = q_values_all.gather(
-                1, actions_tensor.unsqueeze(1)
-            ).squeeze(1)
-
-            with torch.no_grad():
-
-                next_q_policy, _ = policy_net(next_states_tensor)
-
-                next_q_policy = next_q_policy.masked_fill(
-                    masks_next_tensor == 0, -1e9
-                )
-
-                next_actions = next_q_policy.argmax(
-                    dim=1, keepdim=True
-                )
-
-                next_q_target, _ = target_net(next_states_tensor)
-
-                next_q_target = next_q_target.masked_fill(
-                    masks_next_tensor == 0, -1e9
-                )
-
-                next_q = next_q_target.gather(
-                    1, next_actions
-                ).squeeze(1)
-
-                next_q = next_q * (1 - dones_tensor)
-
-                target = rewards_tensor + gamma * next_q
-
-        # Calculate loss in FP32.
-        td_errors = q_values.float() - target.float()
-
-        q_loss_per_sample = F.smooth_l1_loss(
-            q_values.float(),
-            target.float(),
-            reduction='none'
-        )
-
+        with torch.no_grad():
+            #Using the policy network to calculate Q-values for the next states:
+            next_q_policy, _ = policy_net(next_states_tensor)
+            #Applying the masks for the next states:
+            next_q_policy = next_q_policy.masked_fill(masks_next_tensor == 0, -1e9)
+            #Finding the highest Q-value for each next state and returning its index:
+            next_actions = next_q_policy.argmax(dim=1, keepdim=True)
+            #Using the target network to calculate Q-values for the next states:
+            next_q_target, next_v_target = target_net(next_states_tensor)
+            #Applying the masks for the next states:
+            next_q_target = next_q_target.masked_fill(masks_next_tensor == 0, -1e9)
+            #Using the target network Q-values corresponding to the "next_actions" indices as the Q-values for the next states:
+            next_q = next_q_target.gather(1, next_actions).squeeze(1)
+            #Setting all Q-values for terminal states to zero:
+            next_q = next_q * (1 - dones_tensor)
+            #Calculating the target values by adding the rewards to the product of the Q-values for the next states and the discount factor:
+            target = rewards_tensor + gamma * next_q
+            
+        #Calculating the temporal difference (TD) errors:
+        td_errors = q_values - target
+        #Calculating the average loss from the loss values for each sampled experience:
+        q_loss_per_sample = F.smooth_l1_loss(q_values, target, reduction='none')
         q_loss = (weights_tensor * q_loss_per_sample).mean()
         loss = q_loss
         #Ensuring all loss values are finite:
@@ -569,8 +536,6 @@ def worker_process(
 ):
 
     import torch
-
-    torch.set_num_threads(1)
 
     inference_client = InferenceClient(
         worker_id,

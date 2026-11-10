@@ -5,9 +5,11 @@ import time
 import random
 import copy
 
+#The following was tested on a NVIDIA A40 GPU with 46.57 GB of system memory:
+
 #Hyperparameters:
 gamma = 0.99
-batch_size = 1024
+batch_size = 2048
 num_steps = 500_000_000
 target_update = 1000
 opponent_update = 5000
@@ -29,9 +31,21 @@ def main():
     import torch.optim as optim
     import numpy as np
 
+    torch.set_num_threads(2)
+    torch.set_num_interop_threads(1)
+
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "cpu"
     )
+
+    if device.type == "cuda":
+
+        torch.backends.cudnn.benchmark = True
+
+        torch.backends.cudnn.allow_tf32 = True
+        torch.backends.cuda.matmul.allow_tf32 = True
+
+        torch.set_float32_matmul_precision("high")
 
     print(f"Using device: {device}")
 
@@ -91,6 +105,9 @@ def main():
         training_steps = 0
         beta = 0.4
 
+    last_hour_time = time.monotonic()
+    last_hour_steps = training_steps
+
     next_checkpoint_step = (
         (training_steps // 500_000) + 1
     ) * 500_000
@@ -136,13 +153,13 @@ def main():
     transition_queue = mp.Queue(maxsize=20)
 
     response_queues = [
-        mp.Queue() for _ in range(16)
+        mp.Queue() for _ in range(28)
     ]
 
     # Start four worker processes.
     workers = []
 
-    for worker_id in range(16):
+    for worker_id in range(28):
 
         process = mp.Process(
             target=worker_process,
@@ -170,57 +187,96 @@ def main():
         states, actions, rewards, next_states, masks, masks_next, dones = zip(*batch)
 
         #Creating tensors from the experience data:
-        states_np = np.array(states, dtype=np.float32)
-        states_tensor = torch.from_numpy(states_np).float().to(device)
+        states_tensor = torch.as_tensor(
+            np.asarray(states, dtype=np.float32),
+            device=device
+        )
 
-        actions_np = np.array(actions, dtype=np.int64)
-        actions_tensor = torch.from_numpy(actions_np).long().to(device)
+        actions_tensor = torch.as_tensor(
+            np.asarray(actions, dtype=np.int64),
+            device=device
+        )
 
-        rewards_np = np.array(rewards, dtype=np.float32)
-        rewards_tensor = torch.from_numpy(rewards_np).float().to(device)
+        rewards_tensor = torch.as_tensor(
+            np.asarray(rewards, dtype=np.float32),
+            device=device
+        )
 
-        next_states_np = np.array(next_states, dtype=np.float32)
-        next_states_tensor = torch.from_numpy(next_states_np).float().to(device)
+        next_states_tensor = torch.as_tensor(
+            np.asarray(next_states, dtype=np.float32),
+            device=device
+        )
 
-        masks_np = np.array(masks, dtype=np.float32)
-        masks_tensor = torch.from_numpy(masks_np).float().to(device)
+        masks_tensor = torch.as_tensor(
+            np.asarray(masks, dtype=np.float32),
+            device=device
+        )
 
-        masks_next_np = np.array(masks_next, dtype=np.float32)
-        masks_next_tensor = torch.from_numpy(masks_next_np).float().to(device)
+        masks_next_tensor = torch.as_tensor(
+            np.asarray(masks_next, dtype=np.float32),
+            device=device
+        )
 
-        dones_np = np.array(dones, dtype=np.float32)
-        dones_tensor = torch.from_numpy(dones_np).float().to(device)
+        dones_tensor = torch.as_tensor(
+            np.asarray(dones, dtype=np.float32),
+            device=device
+        )
 
-        weights_tensor = torch.from_numpy(weights).float().to(device)
+        weights_tensor = torch.as_tensor(
+            weights,
+            dtype=torch.float32,
+            device=device
+        )
 
         #Calculating Q-values for each state
-        q_values_all, _ = policy_net(states_tensor)
-        q_values = q_values_all.gather(1, actions_tensor.unsqueeze(1)).squeeze(1)
+        with torch.autocast(
+            device_type="cuda",
+            dtype=torch.bfloat16,
+            enabled=(device.type == "cuda")
+        ):
+            q_values_all, _ = policy_net(states_tensor)
 
-        with torch.no_grad():
-            #Using the policy network to calculate Q-values for the next states:
-            next_q_policy, _ = policy_net(next_states_tensor)
-            #Applying the masks for the next states:
-            next_q_policy = next_q_policy.masked_fill(masks_next_tensor == 0, -1e9)
-            #Finding the highest Q-value for each next state and returning its index:
-            next_actions = next_q_policy.argmax(dim=1, keepdim=True)
-            #Using the target network to calculate Q-values for the next states:
-            next_q_target, next_v_target = target_net(next_states_tensor)
-            #Applying the masks for the next states:
-            next_q_target = next_q_target.masked_fill(masks_next_tensor == 0, -1e9)
-            #Using the target network Q-values corresponding to the "next_actions" indices as the Q-values for the next states:
-            next_q = next_q_target.gather(1, next_actions).squeeze(1)
-            #Setting all Q-values for terminal states to zero:
-            next_q = next_q * (1 - dones_tensor)
-            #Calculating the target values by adding the rewards to the product of the Q-values for the next states and the discount factor:
-            target = rewards_tensor + gamma * next_q
-            
-        #Calculating the temporal difference (TD) errors:
-        td_errors = q_values - target
-        #Calculating the average loss from the loss values for each sampled experience:
-        q_loss_per_sample = F.smooth_l1_loss(q_values, target, reduction='none')
+            q_values = q_values_all.gather(
+                1, actions_tensor.unsqueeze(1)
+            ).squeeze(1)
+
+            with torch.no_grad():
+
+                next_q_policy, _ = policy_net(next_states_tensor)
+
+                next_q_policy = next_q_policy.masked_fill(
+                    masks_next_tensor == 0, -1e9
+                )
+
+                next_actions = next_q_policy.argmax(
+                    dim=1, keepdim=True
+                )
+
+                next_q_target, _ = target_net(next_states_tensor)
+
+                next_q_target = next_q_target.masked_fill(
+                    masks_next_tensor == 0, -1e9
+                )
+
+                next_q = next_q_target.gather(
+                    1, next_actions
+                ).squeeze(1)
+
+                next_q = next_q * (1 - dones_tensor)
+
+                target = rewards_tensor + gamma * next_q
+
+        # Calculate loss in FP32.
+        td_errors = q_values.float() - target.float()
+
+        q_loss_per_sample = F.smooth_l1_loss(
+            q_values.float(),
+            target.float(),
+            reduction='none'
+        )
+
         q_loss = (weights_tensor * q_loss_per_sample).mean()
-        loss = q_loss 
+        loss = q_loss
         #Ensuring all loss values are finite:
         if not torch.isfinite(loss).item():
             print("Skipping a nonfinite loss:", loss.item())
@@ -244,7 +300,6 @@ def main():
     try:
 
         while training_steps < num_steps:
-
 
             policy_net.eval()
 
@@ -291,7 +346,7 @@ def main():
                 )
 
                 # Update target network.
-                if (optimizer_steps * 128) % target_update == 0:
+                if (optimizer_steps * 256) % target_update == 0:
 
                     target_net.load_state_dict(
                         policy_net.state_dict()
@@ -305,7 +360,7 @@ def main():
                 )
 
                 # Update latest opponent.
-                if (optimizer_steps * 128) % opponent_update == 0:
+                if (optimizer_steps * 256) % opponent_update == 0:
                     opponent_counter += 1
                     new_opponent_id = f"opponent_{opponent_counter}"
 
@@ -318,7 +373,7 @@ def main():
                     )
 
                 # Add the previous latest opponent to the historical pool.
-                if (optimizer_steps * 128) % snapshot_interval == 0:
+                if (optimizer_steps * 256) % snapshot_interval == 0:
                     pool_ids = list(
                         opponent_catalogue["opponent_pool_ids"]
                     )
@@ -367,6 +422,25 @@ def main():
                 print(f"Training steps completed: {training_steps}")
 
                 next_print_step += 100_000
+
+            current_time = time.monotonic()
+
+            if current_time - last_hour_time >= 3600:
+
+                steps_this_hour = training_steps - last_hour_steps
+
+                print(
+                    f"Training steps completed in the last hour: "
+                    f"{steps_this_hour:,}"
+                )
+
+                print(
+                    f"Average training steps per second: "
+                    f"{steps_this_hour / (current_time - last_hour_time):,.2f}"
+                )
+
+                last_hour_steps = training_steps
+                last_hour_time = current_time
 
     finally:
 
@@ -493,6 +567,10 @@ def worker_process(
     transition_queue,
     opponent_info
 ):
+
+    import torch
+
+    torch.set_num_threads(1)
 
     inference_client = InferenceClient(
         worker_id,

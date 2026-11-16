@@ -126,10 +126,10 @@ def select_action(game_state, network, device):
     return candidate_moves[action_order[0].item()]
 
 #To perform Monte Carlo Tree Search simulations within the given number of seconds and return the move with most visit counts:
-def mcts_action_for_games2(
+def mcts_action_for_games(
     state,
     policy_net,
-    time_budget=0.425
+    time_budget=0.3
 ):
     rng = random.Random()
 
@@ -208,7 +208,7 @@ def mcts_action_for_games2(
 
     return best_action
 
-def mcts_action_for_games(state, policy_net, num_simulations=5):
+def mcts_action_for_games2(state, policy_net, num_simulations=5):
     rng = random.Random()
     mask = MCTS.get_action_mask(state)
     

@@ -37,8 +37,7 @@ def move(game_state: typing.Dict) -> typing.Dict:
 
         action = mcts_action_for_games(
             game_state,
-            policy_net,
-            time_budget=0.425
+            policy_net
         )
 
     direction = get_current_direction(game_state)

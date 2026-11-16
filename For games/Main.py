@@ -32,8 +32,14 @@ def end(game_state: typing.Dict):
 
 #To compute and return a move each turn:
 def move(game_state: typing.Dict) -> typing.Dict:
+
     with torch.inference_mode():
-        action = mcts_action_for_games(game_state, policy_net)
+
+        action = mcts_action_for_games(
+            game_state,
+            policy_net,
+            time_budget=0.425
+        )
 
     direction = get_current_direction(game_state)
 

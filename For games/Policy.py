@@ -1,6 +1,7 @@
 import torch   
 import numpy as np
 import random
+import time
 import MCTS
 from Network import ConvolutionalNeuralNetwork
 
@@ -124,63 +125,89 @@ def select_action(game_state, network, device):
 
     return candidate_moves[action_order[0].item()]
 
-def select_actions_batch(game_states, network, device):
-    """Select one move for each game state using a batched network pass."""
+#To perform Monte Carlo Tree Search simulations within the given number of seconds and return the move with most visit counts:
+def mcts_action_for_games2(
+    state,
+    policy_net,
+    time_budget=0.425
+):
+    rng = random.Random()
 
-    if len(game_states) == 0:
-        return []
+    start_time = time.perf_counter()
+    deadline = start_time + time_budget
 
-    observations = np.stack([
-        _get_observation(state)
-        for state in game_states
-    ])
+    mask = MCTS.get_action_mask(state)
 
-    candidate_moves = []
+    root = MCTS.Node(
+        state,
+        mask,
+        observation=_get_observation(state),
+        rng=rng
+    )
 
-    for state in game_states:
-        current_dir = get_current_direction(state)
+    valid_actions = np.flatnonzero(mask)
 
-        mapping = {
-            "up": ["left", "up", "right"],
-            "down": ["right", "down", "left"],
-            "left": ["down", "left", "up"],
-            "right": ["up", "right", "down"]
-        }
+    if len(valid_actions) == 0:
+        return 1
 
-        candidate_moves.append(mapping[current_dir])
+    best_action = int(
+        rng.choice(valid_actions.tolist())
+    )
 
-    states_t = torch.from_numpy(observations).float().to(device)
+    simulations = 0
 
-    network.eval()
+    while time.perf_counter() < deadline:
 
-    with torch.inference_mode():
-        q_values, _ = network(states_t)
+        node = MCTS.select(root)
 
-    actions = []
+        if node.done:
+            value = MCTS.evaluate(
+                node, policy_net, device
+            )
 
-    for i, game_state in enumerate(game_states):
+        elif node.visit_count == 0 and node.parent is not None:
+            value = MCTS.evaluate(
+                node, policy_net, device
+            )
 
-        action_order = torch.argsort(
-            q_values[i], descending=True
-        ).tolist()
+        else:
 
-        move = None
+            if len(node.children) == 0:
+                MCTS.expand(
+                    node, policy_net, device
+                )
 
-        for action_index in action_order:
-            candidate = candidate_moves[i][action_index]
+            if len(node.children) > 0:
+                node = rng.choice(
+                    list(node.children.values())
+                )
 
-            if is_safe_move(game_state, candidate):
-                move = candidate
-                break
+            value = MCTS.evaluate(
+                node, policy_net, device
+            )
 
-        if move is None:
-            move = candidate_moves[i][action_order[0]]
+        MCTS.backpropagate(node, value)
 
-        actions.append(move)
+        simulations += 1
 
-    return actions
+    if len(root.children) > 0:
 
-#To perform a Monte Carlo Tree Search with the given number of simulations and return the move with most visit counts:
+        best_action = int(
+            max(
+                root.children.items(),
+                key=lambda pair: pair[1].visit_count
+            )[0]
+        )
+
+    elapsed = time.perf_counter() - start_time
+
+    print(
+        f"Simulations: {simulations}, "
+        f"Elapsed: {elapsed * 1000:.2f} ms"
+    )
+
+    return best_action
+
 def mcts_action_for_games(state, policy_net, num_simulations=5):
     rng = random.Random()
     mask = MCTS.get_action_mask(state)

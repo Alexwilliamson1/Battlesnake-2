@@ -62,110 +62,6 @@ def select(node, c=1.4):
     return node
 
 #To simulate each of the agent's valid actions in the given node's state and create child nodes from the resulting data:
-def prepare_expansion(node):
-
-    expansions = []
-
-    valid_actions = np.where(node.mask == 1)[0]
-    controlled_id = node.state["you"]["id"]
-
-    for action in valid_actions:
-
-        action = int(action)
-        next_state = deepcopy(node.state)
-        moves = {}
-        opponent_states = []
-
-        for i, snake in enumerate(next_state["board"]["snakes"]):
-
-            if snake["health"] <= 0:
-                continue
-
-            if snake["id"] == controlled_id:
-
-                current_dir = get_current_direction(next_state)
-
-                mapping = {
-                    "up": ["left", "up", "right"],
-                    "down": ["right", "down", "left"],
-                    "left": ["down", "left", "up"],
-                    "right": ["up", "right", "down"]
-                }
-
-                moves[i] = mapping[current_dir][action]
-
-            else:
-
-                move_state = GameSimulator.make_move_state(
-                    next_state, i
-                )
-
-                opponent_states.append((i, move_state))
-
-        expansions.append({
-            "node": node,
-            "action": action,
-            "next_state": next_state,
-            "moves": moves,
-            "opponent_states": opponent_states
-        })
-
-    return expansions
-
-def finish_expansion(record):
-
-    node = record["node"]
-    action = record["action"]
-    next_state = record["next_state"]
-    moves = record["moves"]
-
-    GameSimulator.resolve_turn(
-        next_state,
-        moves,
-        node.rng
-    )
-
-    controlled_id = node.state["you"]["id"]
-
-    controlled_snake = next(
-        (
-            snake for snake in next_state["board"]["snakes"]
-            if snake["id"] == controlled_id
-        ),
-        None
-    )
-
-    if controlled_snake is None:
-        raise RuntimeError(
-            f"There is no snake with id {controlled_id!r}."
-        )
-
-    next_state["you"] = controlled_snake
-
-    agent_dead = controlled_snake["health"] <= 0
-    game_done = GameSimulator.game_over(next_state)
-    done = agent_dead or game_done
-
-    next_state["turn"] += 1
-
-    next_obs = Policy._get_observation(next_state)
-
-    if done:
-        next_mask = np.zeros(3, dtype=np.float32)
-    else:
-        next_mask = get_action_mask(next_state)
-
-    node.children[action] = Node(
-        state=next_state,
-        mask=next_mask,
-        observation=next_obs,
-        parent=node,
-        action=action,
-        rng=node.rng,
-        done=done
-    )
-
-#To simulate each of the agent's valid actions in the given node's state and create child nodes from the resulting data:
 def expand(node, opponent_net, device):
     valid_actions = np.where(node.mask == 1)[0]
 
@@ -231,68 +127,41 @@ def expand(node, opponent_net, device):
         )
 
 #To evaluate nodes by returning either the highest Q-value for the agent, 1 if the agent is the last surviving snake, or -1 if the agent's health is zero or will be zero after the next turn:
-def evaluate_batch(nodes, policy_net, device):
-    values = [None] * len(nodes)
-    pending_indices = []
-
-    for i, node in enumerate(nodes):
-        if agent_is_dead(node.state):
-            values[i] = -1.0
-
-        elif agent_has_won(node.state):
-            values[i] = 1.0
-
-        elif not np.any(node.mask):
-            values[i] = -1.0
-
-        else:
-            pending_indices.append(i)
-
-    if pending_indices:
-        observations = np.stack([
-            nodes[i].observation
-            for i in pending_indices
-        ])
-
-        states_tensor = torch.as_tensor(
-            observations,
-            dtype=torch.float32,
-            device=device
-        )
-
-        masks_tensor = torch.as_tensor(
-            np.stack([
-                nodes[i].mask
-                for i in pending_indices
-            ]),
-            dtype=torch.bool,
-            device=device
-        )
-
-        with torch.inference_mode():
-            q_values, _ = policy_net(states_tensor)
-
-            q_values = q_values.masked_fill(
-                ~masks_tensor,
-                -torch.inf
-            )
-
-            batch_values = q_values.max(dim=1).values
-
-        for index, value in zip(
-            pending_indices,
-            batch_values.tolist()
-        ):
-            values[index] = float(value)
-
-    return values
-
 def evaluate(node, policy_net, device):
-    return evaluate_batch(
-        [node],
-        policy_net,
-        device
-    )[0]
+
+    if agent_is_dead(node.state):
+        return -1.0
+
+    elif agent_has_won(node.state):
+        return 1.0
+
+    elif not np.any(node.mask):
+        return -1.0
+
+    observation_tensor = torch.as_tensor(
+        node.observation,
+        dtype=torch.float32,
+        device=device
+    ).unsqueeze(0)
+
+    mask_tensor = torch.as_tensor(
+        node.mask,
+        dtype=torch.bool,
+        device=device
+    ).unsqueeze(0)
+
+    with torch.inference_mode():
+
+        q_values, _ = policy_net(observation_tensor)
+
+        q_values = q_values.masked_fill(
+            ~mask_tensor,
+            -torch.inf
+        )
+
+        value = q_values.max(dim=1).values.item()
+
+    return float(value)
 
 #To traverse up the tree from the given node, incrementing each node's visit count and adding the given value to each node's total value:
 def backpropagate(node, value):

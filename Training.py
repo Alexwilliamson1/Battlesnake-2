@@ -15,12 +15,12 @@ import copy
 #Hyperparameters:
 gamma = 0.99
 batch_size = 512
-num_steps = 500_000_000
+num_steps = 600_000_000
 target_update = 1000
 opponent_update = 5000
-snapshot_interval = 250_000
+snapshot_interval = 500_000
 beta_start = 0.4
-beta_anneal_steps = 50_000_000
+beta_anneal_steps = 46_000_000
 max_opponents = 20
 
 #Use a CUDA device, if available, otherwise use the CPU:
@@ -159,28 +159,46 @@ def main():
         states, actions, rewards, next_states, masks, masks_next, dones = zip(*batch)
 
         #Creating tensors from the experience data:
-        states_np = np.array(states, dtype=np.float32)
-        states_tensor = torch.from_numpy(states_np).float().to(device)
+        states_tensor = torch.as_tensor(
+            np.asarray(states, dtype=np.float32),
+            device=device
+        )
 
-        actions_np = np.array(actions, dtype=np.int64)
-        actions_tensor = torch.from_numpy(actions_np).long().to(device)
+        actions_tensor = torch.as_tensor(
+            np.asarray(actions, dtype=np.int64),
+            device=device
+        )
 
-        rewards_np = np.array(rewards, dtype=np.float32)
-        rewards_tensor = torch.from_numpy(rewards_np).float().to(device)
+        rewards_tensor = torch.as_tensor(
+            np.asarray(rewards, dtype=np.float32),
+            device=device
+        )
 
-        next_states_np = np.array(next_states, dtype=np.float32)
-        next_states_tensor = torch.from_numpy(next_states_np).float().to(device)
+        next_states_tensor = torch.as_tensor(
+            np.asarray(next_states, dtype=np.float32),
+            device=device
+        )
 
-        masks_np = np.array(masks, dtype=np.float32)
-        masks_tensor = torch.from_numpy(masks_np).float().to(device)
+        masks_tensor = torch.as_tensor(
+            np.asarray(masks, dtype=np.float32),
+            device=device
+        )
 
-        masks_next_np = np.array(masks_next, dtype=np.float32)
-        masks_next_tensor = torch.from_numpy(masks_next_np).float().to(device)
+        masks_next_tensor = torch.as_tensor(
+            np.asarray(masks_next, dtype=np.float32),
+            device=device
+        )
 
-        dones_np = np.array(dones, dtype=np.float32)
-        dones_tensor = torch.from_numpy(dones_np).float().to(device)
+        dones_tensor = torch.as_tensor(
+            np.asarray(dones, dtype=np.float32),
+            device=device
+        )
 
-        weights_tensor = torch.from_numpy(weights).float().to(device)
+        weights_tensor = torch.as_tensor(
+            weights,
+            dtype=torch.float32,
+            device=device
+        )
 
         #Calculating Q-values for each state
         q_values_all, _ = policy_net(states_tensor)
@@ -261,7 +279,6 @@ def main():
             except queue.Empty:
                 pass
 
-            # Train once for approximately every 32 new transitions.
             while pending_transitions >= batch_size:
 
                 trained = train_step()

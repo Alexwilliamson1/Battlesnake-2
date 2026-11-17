@@ -9,8 +9,8 @@ import copy
 
 #Hyperparameters:
 gamma = 0.99
-batch_size = 2048
-num_steps = 500_000_000
+batch_size = 1024
+num_steps = 600_000_000
 target_update = 1000
 opponent_update = 5000
 snapshot_interval = 750_000
@@ -141,13 +141,13 @@ def main():
     transition_queue = mp.Queue(maxsize=20)
 
     response_queues = [
-        mp.Queue() for _ in range(28)
+        mp.Queue() for _ in range(26)
     ]
 
     # Start four worker processes.
     workers = []
 
-    for worker_id in range(28):
+    for worker_id in range(26):
 
         process = mp.Process(
             target=worker_process,
@@ -313,7 +313,7 @@ def main():
                 )
 
                 # Update target network.
-                if (optimizer_steps * 256) % target_update == 0:
+                if (optimizer_steps * (batch_size / 8)) % target_update == 0:
 
                     target_net.load_state_dict(
                         policy_net.state_dict()
@@ -327,7 +327,7 @@ def main():
                 )
 
                 # Update latest opponent.
-                if (optimizer_steps * 256) % opponent_update == 0:
+                if (optimizer_steps * (batch_size / 8)) % opponent_update == 0:
                     opponent_counter += 1
                     new_opponent_id = f"opponent_{opponent_counter}"
 
@@ -340,7 +340,7 @@ def main():
                     )
 
                 # Add the previous latest opponent to the historical pool.
-                if (optimizer_steps * 256) % snapshot_interval == 0:
+                if (optimizer_steps * (batch_size / 8)) % snapshot_interval == 0:
                     pool_ids = list(
                         opponent_catalogue["opponent_pool_ids"]
                     )

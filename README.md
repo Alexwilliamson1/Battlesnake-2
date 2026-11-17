@@ -24,7 +24,7 @@ Then the target network is used to evaluate action a* to find the optimal value 
 </div>
 The neural network uses the difference between optimal (target) values and Q-values to learn optimal actions, given any state.  
  
-The program uses several features to enhance the DDQN algorithm, including vectorized environments, prioritized experience replay, board canonicalization, self-play, and a Monte Carlo Tree Search (MCTS).   
+The program uses several features to enhance the DDQN algorithm, including vectorized environments, prioritized experience replay, board canonicalization, self-play, and a Monte Carlo Tree Search (MCTS).
 
 Vectorized environments are used to run 8 simultaneous game simulations to improve the overall efficiency of the algorithm.  Prioritized experience replay is also used to train the agent on experiences in which it performed poorly and that provide the most opportunities for learning.
 

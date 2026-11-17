@@ -31,7 +31,7 @@ Vectorized environments are used to run 8 simultaneous game simulations to impro
 The program uses self-play for training, wherein each simulation is played between the agent and 3 of the same opponent.  Every 5000 training steps, the opponent’s current policy becomes the agent’s policy, and every 10,000 steps, the opponent’s previous policy is added to a running pool of 20 policies.  At the beginning of each new game, an opponent policy is chosen. With an 80% probability, the agent’s policy is used as the opponent policy, and otherwise a policy from the opponent pool is randomly chosen as the opponent policy.  Occasionally training against old policies is intended to help the agent retain old strategies.
 <br><br>
 The program also implements board canonicalization, which involves rotating the game state representation (observation) each turn so that the agent is moving towards the top of the board in every state processed by the network.  This reduces the total number of possible game states in the state space by generalizing the direction of the snake agent.  I have further generalized the game state by ‘flipping’ or reflecting the observation along the vertical axis with a 0.5 probability each turn before it is inputted into the network.  This generalizes the difference between moving left and right in the game.
-<br>
+<br><br>
 A MCTS is used each turn during training to evaluate moves and improve the quality of experiences used for training the network.  The MCTS simulations use the same opponent policy as the game simulations. 
 
 ## Requirements:

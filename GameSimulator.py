@@ -17,21 +17,49 @@ def init_game(num_snakes, width=11, height=11, rng=None):
     if rng is None:
         rng = random.Random()
 
+    assert num_snakes == 4
+
     game_id = uuid.uuid4().hex
 
-    snakes = []
-    mid_x = width // 2
-    mid_y = height // 2
-    spawn_points = [
-        (1, height - 2),
-        (width - 2, 1),
-        (width - 2, height - 2),
-        (1, 1),
-        (mid_x, height - 2),
-        (mid_x, 1),
-        (1, mid_y),
-        (width - 2, mid_y),     
+    spawn_points1 = [
+        (1, 5),
+        (5, 1),
+        (5, 9),
+        (9, 5),
     ]
+
+    spawn_points2 = [
+        (1, 9),
+        (9, 1),
+        (9, 9),
+        (1, 1),
+    ]
+
+    food_positions1 = {
+        (1, 5): [(0, 4), (0, 6)],
+        (5, 1): [(4, 0), (6, 0)],
+        (5, 9): [(4, 10), (6, 10)],
+        (9, 5): [(10, 4), (10, 6)],
+    }
+
+    food_positions2 = {
+        (1, 9): [(0, 8), (2, 10)],
+        (9, 1): [(8, 0), (10, 2)],
+        (9, 9): [(8, 10), (10, 8)],
+        (1, 1): [(0, 2), (2, 0)],
+    }
+
+    if rng.random() < 0.5:
+        spawn_points = spawn_points1.copy()
+        food_positions = food_positions1
+    else:
+        spawn_points = spawn_points2.copy()
+        food_positions = food_positions2
+
+    rng.shuffle(spawn_points)
+
+    snakes = []
+    food = []
 
     for i in range(num_snakes):
         x, y = spawn_points[i % len(spawn_points)]
@@ -48,6 +76,10 @@ def init_game(num_snakes, width=11, height=11, rng=None):
             "length": 3,
         }
         snakes.append(snake)
+ 
+        fx, fy = rng.choice(food_positions[(x, y)])
+
+        food.append({"x": fx, "y": fy})
 
     state = {
         "game": {
@@ -68,13 +100,7 @@ def init_game(num_snakes, width=11, height=11, rng=None):
         "board": {
             "width": width,
             "height": height,
-            "food": [
-                {"x": 5, "y": 5},
-                {"x": 0, "y": 8},
-                {"x": 10, "y": 2},
-                {"x": 2, "y": 0},
-                {"x": 8, "y": 10},
-            ],
+            "food": food,
             "hazards": [],
             "snakes": snakes,
         },

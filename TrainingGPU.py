@@ -5,8 +5,6 @@ import time
 import random
 import copy
 
-#The following was tested on a NVIDIA RTX A5000 GPU:
-
 #Hyperparameters:
 gamma = 0.99
 batch_size = 1024

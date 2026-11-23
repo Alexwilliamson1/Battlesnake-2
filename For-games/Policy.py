@@ -11,14 +11,9 @@ device = torch.device("cpu")
 #Creating the policy network and using the saved state dictionary in checkpoint.pth:
 policy_net = ConvolutionalNeuralNetwork().to(device)
 
-checkpoint_path = os.path.join(
-    os.environ["RAILWAY_VOLUME_MOUNT_PATH"],
-    "checkpoint.pth"
-)
-
 try:
     checkpoint = torch.load(
-        checkpoint_path,
+        "/data/checkpoint.pth",
         map_location=device,
         weights_only=False
     )

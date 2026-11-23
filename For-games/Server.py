@@ -2,9 +2,10 @@ import logging
 import os
 import typing
 from flask import Flask, request, jsonify
+import Main
 
 #Below is a Flask server that runs on port 8000 and uses the Battlesnake API to respond to requests from play.battlesnake.com:
-def run_server(handlers: typing.Dict):
+def create_app(handlers: typing.Dict):
     app = Flask("Battlesnake")
 
     #For an "info" request:
@@ -41,11 +42,11 @@ def run_server(handlers: typing.Dict):
                              "battlesnake/github/starter-snake-python")
         return response
 
-    host = "0.0.0.0"
-    port = int(os.environ.get("PORT", "8000"))
+    return app
 
-    logging.getLogger("werkzeug").setLevel(logging.ERROR)
-
-    print(f"\nRunning Battlesnake at http://{host}:{port}")
-    app.run(host=host, port=port)
-
+Battlesnake = create_app({
+    "info": Main.info,
+    "start": Main.start,
+    "move": Main.move,
+    "end": Main.end
+})

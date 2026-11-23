@@ -53,9 +53,5 @@ def move(game_state: typing.Dict) -> typing.Dict:
 
     return {"move": move}
 
-#Calling "run_server":
-if __name__ == "__main__":
-    from Server import run_server
 
-    run_server({"info": info, "start": start, "move": move, "end": end})
 

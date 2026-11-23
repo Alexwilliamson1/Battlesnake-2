@@ -25,7 +25,8 @@ try:
 
 except (FileNotFoundError, KeyError, RuntimeError) as error:
     print("The live policy network failed to load.")
-    raise RuntimeError("Unable to load Battlesnake checkpoint.") from error
+    #raise RuntimeError("Unable to load Battlesnake checkpoint.") from error
+    print(error)
 
 policy_net.eval()
 

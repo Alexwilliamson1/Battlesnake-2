@@ -1,17 +1,24 @@
 import torch   
 import numpy as np
+import os
 import random
 import time
 import MCTS
 from Network import ConvolutionalNeuralNetwork
 
 device = torch.device("cpu")
+
 #Creating the policy network and using the saved state dictionary in checkpoint.pth:
 policy_net = ConvolutionalNeuralNetwork().to(device)
 
+checkpoint_path = os.path.join(
+    os.environ["RAILWAY_VOLUME_MOUNT_PATH"],
+    "checkpoint.pth"
+)
+
 try:
     checkpoint = torch.load(
-        "checkpoint.pth",
+        checkpoint_path,
         map_location=device,
         weights_only=False
     )
@@ -23,7 +30,7 @@ try:
 
 except (FileNotFoundError, KeyError, RuntimeError) as error:
     print("The live policy network failed to load.")
-    print(error)
+    raise RuntimeError("Unable to load Battlesnake checkpoint.") from error
 
 policy_net.eval()
 
@@ -129,7 +136,7 @@ def select_action(game_state, network, device):
 def mcts_action_for_games(
     state,
     policy_net,
-    time_budget=0.3
+    time_budget=0.25
 ):
     rng = random.Random()
 

@@ -45,45 +45,55 @@ def create_app(handlers: typing.Dict):
         return response
 
 
-    # Temporary endpoint for uploading the PyTorch checkpoint:
+
+    # Temporary checkpoint upload endpoint:
     @app.post("/upload-checkpoint")
     def upload_checkpoint():
 
-        # Authenticate the upload:
-        token = os.environ.get("UPLOAD_TOKEN")
+        try:
+            # Authenticate:
+            token = os.environ.get("UPLOAD_TOKEN")
 
-        if not token:
-            return jsonify({"error": "Upload token not configured"}), 500
+            if not token:
+                return jsonify({"error": "Upload token not configured"}), 500
 
-        if request.headers.get("Authorization") != f"Bearer {token}":
-            return jsonify({"error": "Unauthorized"}), 401
+            if request.headers.get("Authorization") != f"Bearer {token}":
+                return jsonify({"error": "Unauthorized"}), 401
 
-        # Check that a file was provided:
-        if "file" not in request.files:
-            return jsonify({"error": "No file provided"}), 400
+            # Check uploaded file:
+            if "file" not in request.files:
+                return jsonify({"error": "No file provided"}), 400
 
-        file = request.files["file"]
+            file = request.files["file"]
 
-        if file.filename != "checkpoint.pth":
-            return jsonify({"error": "Invalid filename"}), 400
+            if file.filename != "checkpoint.pth":
+                return jsonify({"error": "Invalid filename"}), 400
 
-        # Save directly to the Railway persistent volume:
-        destination = "/data/checkpoint.pth"
+            # Check Railway volume:
+            destination = "/data/checkpoint.pth"
 
-        os.makedirs("/data", exist_ok=True)
+            if not os.path.isdir("/data"):
+                raise FileNotFoundError("/data directory does not exist")
 
-        file.save(destination)
+            # Save checkpoint:
+            file.save(destination)
 
-        # Verify that the uploaded file is not empty:
-        if os.path.getsize(destination) == 0:
-            os.remove(destination)
-            return jsonify({"error": "Uploaded file is empty"}), 400
+            size = os.path.getsize(destination)
 
-        return jsonify({
-            "message": "Checkpoint uploaded successfully",
-            "size": os.path.getsize(destination)
-        }), 200
-    
+            if size == 0:
+                os.remove(destination)
+                return jsonify({"error": "Uploaded file is empty"}), 400
+
+            logging.info(f"Checkpoint uploaded successfully: {size} bytes")
+
+            return jsonify({
+                "message": "Checkpoint uploaded successfully",
+                "size": size
+            }), 200
+
+        except Exception:
+            logging.exception("Checkpoint upload failed")
+            return jsonify({"error": "Checkpoint upload failed"}), 500 
 
     return app
 

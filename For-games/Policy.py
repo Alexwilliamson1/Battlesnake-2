@@ -10,7 +10,7 @@ device = torch.device("cpu")
 
 #Creating the policy network and using the saved state dictionary in checkpoint.pth:
 policy_net = ConvolutionalNeuralNetwork().to(device)
-
+"""
 try:
     checkpoint = torch.load(
         "/data/checkpoint.pth",
@@ -29,7 +29,7 @@ except (FileNotFoundError, KeyError, RuntimeError) as error:
     print(error)
 
 policy_net.eval()
-
+"""
 #To create an observation (2-D array), given the game state, with a channel (array) for each of the following: the coordinates of the agent's head, the coordinates of the agent's body segments, the agent's health / 100, the agent's length / the board area, the coordinates of the heads of opponent snakes, the coordinates of the body segments of opponent snakes, the coordinates of food objects, the length of the longest snake / the board area, the game turn / 100, and the coordinates of hazards:
 def _get_observation(state):
     

@@ -11,25 +11,6 @@ device = torch.device("cpu")
 #Creating the policy network and using the saved state dictionary in checkpoint.pth:
 policy_net = ConvolutionalNeuralNetwork().to(device)
 
-checkpoint_path = "/data/checkpoint.pth"
-
-if os.path.isfile(checkpoint_path) and os.path.getsize(checkpoint_path) > 0:
-
-    checkpoint = torch.load(
-        checkpoint_path,
-        map_location=device,
-        weights_only=False
-    )
-
-    policy_net.load_state_dict(checkpoint["policy_state_dict"])
-    training_steps = checkpoint.get('training_steps', 0)
-    print("The live policy network loaded successfully.")
-    print("Training steps completed: ", training_steps)
-
-else:
-    print("Checkpoint missing or empty. Skipping checkpoint loading.")
-
-"""
 try:
     checkpoint = torch.load(
         "/data/checkpoint.pth",
@@ -46,7 +27,6 @@ except (FileNotFoundError, KeyError, RuntimeError) as error:
     print("The live policy network failed to load.")
     #raise RuntimeError("Unable to load Battlesnake checkpoint.") from error
     print(error)
-"""
 
 policy_net.eval()
 

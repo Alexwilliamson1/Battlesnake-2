@@ -10,6 +10,25 @@ device = torch.device("cpu")
 
 #Creating the policy network and using the saved state dictionary in checkpoint.pth:
 policy_net = ConvolutionalNeuralNetwork().to(device)
+
+checkpoint_path = "/data/checkpoint.pth"
+
+if os.path.isfile(checkpoint_path) and os.path.getsize(checkpoint_path) > 0:
+
+    checkpoint = torch.load(
+        checkpoint_path,
+        map_location=device,
+        weights_only=False
+    )
+
+    policy_net.load_state_dict(checkpoint["policy_state_dict"])
+    training_steps = checkpoint.get('training_steps', 0)
+    print("The live policy network loaded successfully.")
+    print("Training steps completed: ", training_steps)
+
+else:
+    print("Checkpoint missing or empty. Skipping checkpoint loading.")
+
 """
 try:
     checkpoint = torch.load(
@@ -27,9 +46,10 @@ except (FileNotFoundError, KeyError, RuntimeError) as error:
     print("The live policy network failed to load.")
     #raise RuntimeError("Unable to load Battlesnake checkpoint.") from error
     print(error)
+"""
 
 policy_net.eval()
-"""
+
 #To create an observation (2-D array), given the game state, with a channel (array) for each of the following: the coordinates of the agent's head, the coordinates of the agent's body segments, the agent's health / 100, the agent's length / the board area, the coordinates of the heads of opponent snakes, the coordinates of the body segments of opponent snakes, the coordinates of food objects, the length of the longest snake / the board area, the game turn / 100, and the coordinates of hazards:
 def _get_observation(state):
     

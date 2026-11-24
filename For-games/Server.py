@@ -43,58 +43,7 @@ def create_app(handlers: typing.Dict):
         response.headers.set("server",
                              "battlesnake/github/starter-snake-python")
         return response
-
-
-
-    # Temporary checkpoint upload endpoint:
-    @app.post("/upload-checkpoint")
-    def upload_checkpoint():
-
-        try:
-            # Authenticate:
-            token = os.environ.get("UPLOAD_TOKEN")
-
-            if not token:
-                return jsonify({"error": "Upload token not configured"}), 500
-
-            if request.headers.get("Authorization") != f"Bearer {token}":
-                return jsonify({"error": "Unauthorized"}), 401
-
-            # Check uploaded file:
-            if "file" not in request.files:
-                return jsonify({"error": "No file provided"}), 400
-
-            file = request.files["file"]
-
-            if file.filename != "checkpoint.pth":
-                return jsonify({"error": "Invalid filename"}), 400
-
-            # Check Railway volume:
-            destination = "/data/checkpoint.pth"
-
-            if not os.path.isdir("/data"):
-                raise FileNotFoundError("/data directory does not exist")
-
-            # Save checkpoint:
-            file.save(destination)
-
-            size = os.path.getsize(destination)
-
-            if size == 0:
-                os.remove(destination)
-                return jsonify({"error": "Uploaded file is empty"}), 400
-
-            logging.info(f"Checkpoint uploaded successfully: {size} bytes")
-
-            return jsonify({
-                "message": "Checkpoint uploaded successfully",
-                "size": size
-            }), 200
-
-        except Exception:
-            logging.exception("Checkpoint upload failed")
-            return jsonify({"error": "Checkpoint upload failed"}), 500 
-
+        
     return app
 
 Battlesnake = create_app({

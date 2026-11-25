@@ -13,7 +13,7 @@ policy_net = ConvolutionalNeuralNetwork().to(device)
 
 try:
     checkpoint = torch.load(
-        "checkpoint.pth",
+        "/data/checkpoint.pth",
         map_location=device,
         weights_only=False
     )
